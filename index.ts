@@ -133,7 +133,7 @@ const commands: {[key: string]: Command} = {
 
 client.on("message", message => {
     if (message.content.startsWith(config.prefix)) {
-        var afterPrefix: string = message.content.slice(1);
+        var afterPrefix: string = message.content.slice(config.prefix.length);
         if (commands.hasOwnProperty(afterPrefix)) {
             commands[afterPrefix].execute(message);
         }
