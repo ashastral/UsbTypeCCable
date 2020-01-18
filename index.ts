@@ -6,7 +6,7 @@ import moment, { Moment } from "moment";
 import schedule from "node-schedule";
 import stream from "stream";
 import fs from "fs";
-import ffmpeg from "fluent-ffmpeg";
+import ffmpeg, { FfmpegCommand } from "fluent-ffmpeg";
 
 type ScoreboardSchema = {
     [key: string]: { // userId
@@ -148,37 +148,54 @@ const commands: {[key: string]: Command} = {
     reverb: {
         helpText: "Add reverb to your voice",
         execute: async function(message: MessageWithGuild): Promise<void> {
-            if (message.member?.voice.channel) {
-                var connection: VoiceConnection = await message.member.voice.channel?.join();
-                var audio: stream.Readable = connection.receiver.createStream(message.member, { mode: "pcm", end: "silence" });
-                var passThrough: stream.PassThrough = new stream.PassThrough();
-                var timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
-                    message.channel.send("No audio received in 10 seconds - disconnecting.");
-                    connection.disconnect();
-                });
-                ffmpeg()
-                    .input(audio)
-                    .inputFormat("s16le")
+            ffmpegAudioCommand("reverb", message, ((baseCommand: ffmpeg.FfmpegCommand) =>
+                baseCommand
                     .input(config.reverbKernel)
                     .addOutputOption("-lavfi", "afir=gtype=gn")
-                    .format("s16le")
-                    .pipe(passThrough);
-                connection.play(passThrough, { type: "converted" })
-                    .on("start", () => {
-                        console.log("Reverb - start");
-                        timeout.cancel();
-                    })
-                    .on("finish", () => {
-                        console.log("Reverb - finish");
-                        connection.disconnect();
-                    });
-            } else {
-                message.channel.send("You need to join a voice channel first!");
-            }
+            ));
         }
     },
 
+    wibbry: {
+        helpText: "Repeat your voice with a wobbly audio filter",
+        execute: async function(message: MessageWithGuild): Promise<void> {
+            ffmpegAudioCommand("wibbry", message, ((baseCommand: ffmpeg.FfmpegCommand) =>
+                baseCommand
+                    .input(config.reverbKernel)
+                    .addOutputOption("-lavfi", "vibrato=f=4:d=1")
+            ));
+        }
+    }
+
 };
+
+type FfmpegCommandTransformer = ((inputCommand: ffmpeg.FfmpegCommand) => ffmpeg.FfmpegCommand);
+
+async function ffmpegAudioCommand(commandName: string, message: MessageWithGuild, effect: FfmpegCommandTransformer): Promise<void> {
+    if (message.member?.voice.channel) {
+        var connection: VoiceConnection = await message.member.voice.channel?.join();
+        var audio: stream.Readable = connection.receiver.createStream(message.member, { mode: "pcm", end: "silence" });
+        var passThrough: stream.PassThrough = new stream.PassThrough();
+        var timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
+            message.channel.send("No audio received in 10 seconds - disconnecting.");
+            connection.disconnect();
+        });
+        effect(ffmpeg().input(audio).inputFormat("s16le"))
+            .format("s16le")
+            .pipe(passThrough);
+        connection.play(passThrough, { type: "converted" })
+            .on("start", () => {
+                console.log(`${commandName} - start`);
+                timeout.cancel();
+            })
+            .on("finish", () => {
+                console.log(`${commandName} - finish`);
+                connection.disconnect();
+            });
+    } else {
+        message.channel.send("You need to join a voice channel first!");
+    }
+}
 
 client.on("message", message => {
     if (!(message instanceof Message) || message.guild === null) {
