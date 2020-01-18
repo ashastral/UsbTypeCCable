@@ -160,7 +160,7 @@ const commands: {[key: string]: Command} = {
                     .input(audio)
                     .inputFormat("s16le")
                     .input(config.reverbKernel)
-                    .addOutputOption("-lavfi", "afir")
+                    .addOutputOption("-lavfi", "afir=gtype=gn")
                     .format("s16le")
                     .pipe(passThrough);
                 connection.play(passThrough, { type: "converted" })
