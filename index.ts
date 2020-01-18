@@ -1,12 +1,15 @@
-import { Client, GuildMember, Message, Guild, TextChannel, Attachment, Snowflake, Channel } from "discord.js";
+import { Client, Message, Guild, TextChannel, Snowflake, Channel, VoiceConnection, GuildMember, MessageAttachment } from "discord.js";
 import config from "./config.json";
 import low from "lowdb";
 import FileSync from "lowdb/adapters/FileSync";
 import moment, { Moment } from "moment";
 import schedule from "node-schedule";
+import stream from "stream";
+import fs from "fs";
+import ffmpeg from "fluent-ffmpeg";
 
 type ScoreboardSchema = {
-    [key: string]: { // memberId
+    [key: string]: { // userId
         score: number
     }
 };
@@ -16,14 +19,14 @@ const DefaultScoreboard: (() => ScoreboardSchema) = () => ({});
 type GuildSchema = {
     chargingChannel: Snowflake | null, // channelId
     chargingImageStart: Date | null,
-    chargedMembers: Snowflake[] | null, // memberId[]
+    chargedUsers: Snowflake[] | null, // userId[]
     scoreboard: ScoreboardSchema
 };
 
 const DefaultGuild: (() => GuildSchema) = () => ({
     chargingChannel: null,
     chargingImageStart: null,
-    chargedMembers: null,
+    chargedUsers: null,
     scoreboard: DefaultScoreboard()
 });
 
@@ -32,6 +35,8 @@ type AppSchema = {
         [key: string]: GuildSchema // guildId
     }
 };
+
+type MessageWithGuild = { guild: Guild } & Message;
 
 const DefaultApp: (() => AppSchema) = () => ({
     guilds: {}
@@ -50,7 +55,9 @@ client.once("ready", () => {
     client.guilds.forEach((guild: Guild, guildId: Snowflake) => {
         registerGuild(guild);
     });
-    client.user.setActivity(`${config.prefix}help`, {type: "PLAYING"});
+    if (client.user !== null) {
+        client.user.setActivity(`${config.prefix}help`, {type: "PLAYING"});
+    }
     console.log("Ready!");
 });
 
@@ -60,13 +67,13 @@ client.login(config.token);
 
 type Command = {
     helpText: string,
-    execute: (message: Message) => void
+    execute: (message: MessageWithGuild) => void
 };
 
 const commands: {[key: string]: Command} = {
     help: {
         helpText: "View this information",
-        execute: function(message: Message): void {
+        execute: function(message: MessageWithGuild): void {
             var allHelpText: string[] = [];
             Object.entries(commands).forEach(([commandName, command]: [string, Command]) => {
                 allHelpText.push(`${config.prefix}${commandName} - ${command.helpText}`);
@@ -77,23 +84,23 @@ const commands: {[key: string]: Command} = {
 
     scoreboard: {
         helpText: "View the charging speed scoreboard for this server",
-        execute: function(message: Message): void {
+        execute: function(message: MessageWithGuild): void {
             var scoreboard: ScoreboardSchema = db.get("guilds")
                 .get(message.guild.id)
                 .get("scoreboard", {})
                 .value();
-            type MemberScore = {memberId: Snowflake, score: number};
-            var scoreArray: MemberScore[] = Object.keys(scoreboard)
-                .map((memberId: Snowflake) => ({
-                    memberId: memberId,
-                    score: scoreboard[memberId].score
+            type UserScore = {userId: Snowflake, score: number};
+            var scoreArray: UserScore[] = Object.keys(scoreboard)
+                .map((userId: Snowflake) => ({
+                    userId: userId,
+                    score: scoreboard[userId].score
                 }));
-            scoreArray.sort(memberScore => memberScore.score);
+            scoreArray.sort(userScore => userScore.score);
             var scoreMessageArray: string[] = [];
-            scoreArray.forEach(memberScore => {
-                var member: GuildMember | undefined = message.guild.members.get(memberScore.memberId);
-                var memberDisplayName: string = (member === undefined) ? memberScore.memberId.toString() : member.displayName;
-                scoreMessageArray.push("**" + memberDisplayName + "**: " + memberScore.score + "W");
+            scoreArray.forEach(userScore => {
+                var user: GuildMember | undefined = message.guild.members.get(userScore.userId);
+                var userDisplayName: string = (user === undefined) ? userScore.userId.toString() : user.displayName;
+                scoreMessageArray.push("**" + userDisplayName + "**: " + userScore.score + "W");
             });
             message.channel.send("Scoreboard:\n" + scoreMessageArray.join("\n"));
         }
@@ -101,20 +108,20 @@ const commands: {[key: string]: Command} = {
 
     score: {
         helpText: "View your charging speed",
-        execute: function(message: Message): void {
+        execute: function(message: MessageWithGuild): void {
             var score: number = db.get("guilds")
                 .get(message.guild.id)
                 .get("scoreboard")
-                .get(message.member.id)
+                .get(message.author.id)
                 .get("score", config.scoreInitial)
                 .value();
-            message.channel.send(`<@${message.member.id}> Your score is **${score}${config.scoreSuffix}**.`);
+            message.channel.send(`<@${message.author.id}> Your score is **${score}${config.scoreSuffix}**.`);
         }
     },
 
     setChargingChannel: {
         helpText: "Set the channel for charging to the channel where the command was sent",
-        execute: function(message: Message): void {
+        execute: function(message: MessageWithGuild): void {
             db.get("guilds")
                 .get(message.guild.id)
                 .set("chargingChannel", message.channel.id)
@@ -125,17 +132,58 @@ const commands: {[key: string]: Command} = {
 
     forcePostImage: {
         helpText: "Force-post image",
-        execute: function(message: Message): void {
+        execute: function(message: MessageWithGuild): void {
             postImage();
         }
-    }
+    },
+
+    voiceTest: {
+        helpText: "voiceTest",
+        execute: async function(message: MessageWithGuild): Promise<void> {
+            if (message.member?.voice.channel) {
+                var connection: VoiceConnection = await message.member.voice.channel?.join();
+                connection.play(fs.createReadStream("voice.opus"), { type: "opus" }).on("finish", () => {
+                    connection.disconnect();
+                });
+            }
+        }
+    },
+
+    reverb: {
+        helpText: "Add reverb to your voice",
+        execute: async function(message: MessageWithGuild): Promise<void> {
+            if (message.member?.voice.channel) {
+                var connection: VoiceConnection = await message.member.voice.channel?.join();
+                var audio: stream.Readable = connection.receiver.createStream(message.member, { mode: "pcm", end: "silence" });
+                var passThrough: stream.PassThrough = new stream.PassThrough();
+                ffmpeg()
+                    .input(audio)
+                    .inputFormat("s16le")
+                    .input(config.reverbKernel)
+                    .addOutputOption("-lavfi", "afir")
+                    .format("s16le")
+                    .pipe(passThrough);
+                connection.play(passThrough, { type: "converted" })
+                    .on("start", () => { console.log("start"); })
+                    .on("finish", () => {
+                        console.log("Disconnecting");
+                        connection.disconnect();
+                    });
+            } else {
+                message.channel.send("You need to join a voice channel first!");
+            }
+        }
+    },
+
 };
 
 client.on("message", message => {
-    if (message.content.startsWith(config.prefix)) {
+    if (!(message instanceof Message) || message.guild === null) {
+        return;
+    } else if (message.content.startsWith(config.prefix)) {
         var afterPrefix: string = message.content.slice(config.prefix.length);
         if (commands.hasOwnProperty(afterPrefix)) {
-            commands[afterPrefix].execute(message);
+            commands[afterPrefix].execute(message as MessageWithGuild);
         }
         console.log(message.content);
     } else if (message.content === config.entryMessage) {
@@ -153,8 +201,8 @@ client.on("message", message => {
                 if (moment().isBefore(cutoffTime)) {
                     db.get("guilds")
                         .get(message.guild.id)
-                        .get("chargedMembers")
-                        .push(message.member.id)
+                        .get("chargedUsers")
+                        .push(message.author.id)
                         .write();
                 }
             }
@@ -181,12 +229,12 @@ function postImage(): void {
             if (guild !== undefined) {
                 var channel: Channel | undefined = guild.channels.get(schema.chargingChannel);
                 if (channel instanceof TextChannel) {
-                    channel.send(new Attachment(config.image)).then(() => {
+                    channel.send(new MessageAttachment(config.image)).then(() => {
                         db.get("guilds")
                             .get(guildId)
                             .assign({
                                 chargingImageStart: moment().toDate(),
-                                chargedMembers: []
+                                chargedUsers: []
                             })
                             .write();
                         var endTime: Moment = moment().add(config.entryDurationSeconds, "seconds");
@@ -207,21 +255,21 @@ function tallyEntries(): void {
             if (guild !== undefined) {
                 var channel: Channel | undefined = guild.channels.get(schema.chargingChannel);
                 if (channel instanceof TextChannel) {
-                    if (schema.chargedMembers !== null) {
-                        var chargedMemberset: Set<Snowflake> = new Set(schema.chargedMembers);
-                        chargedMemberset.forEach((memberId: Snowflake) => {
+                    if (schema.chargedUsers !== null) {
+                        var chargedUserset: Set<Snowflake> = new Set(schema.chargedUsers);
+                        chargedUserset.forEach((userId: Snowflake) => {
                             db.get("guilds")
                                 .get(guildId)
                                 .get("scoreboard")
-                                .defaults({[memberId]: {score: config.scoreInitial}})
-                                .get(memberId)
+                                .defaults({[userId]: {score: config.scoreInitial}})
+                                .get(userId)
                                 .update("score", (score: number) => score + config.scoreEntryIncrement)
                                 .write();
                         });
-                        if (chargedMemberset.size > 1) {
-                            channel.send(`**${chargedMemberset.size} users** have increased their charging speed!`);
-                        } else if (chargedMemberset.size === 1) {
-                            channel.send(`**${chargedMemberset.size} user** has increased their charging speed!`);
+                        if (chargedUserset.size > 1) {
+                            channel.send(`**${chargedUserset.size} users** have increased their charging speed!`);
+                        } else if (chargedUserset.size === 1) {
+                            channel.send(`**${chargedUserset.size} user** has increased their charging speed!`);
                         } else {
                             channel.send("No one wanted fast charging today...");
                         }
@@ -229,7 +277,7 @@ function tallyEntries(): void {
                             .get(guildId)
                             .assign({
                                 chargingImageStart: null,
-                                chargedMembers: null
+                                chargedUsers: null
                             })
                             .write();
                     }
