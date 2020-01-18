@@ -42,7 +42,7 @@ const DefaultApp: (() => AppSchema) = () => ({
     guilds: {}
 });
 
-const adapter: low.AdapterSync<AppSchema> = new FileSync<AppSchema>("db.json");
+const adapter: low.AdapterSync<AppSchema> = new FileSync<AppSchema>("db/db.json");
 const db: low.LowdbSync<AppSchema> = low(adapter);
 
 if (!db.has("guilds").value()) {
@@ -164,9 +164,9 @@ const commands: {[key: string]: Command} = {
                     .format("s16le")
                     .pipe(passThrough);
                 connection.play(passThrough, { type: "converted" })
-                    .on("start", () => { console.log("start"); })
+                    .on("start", () => { console.log("Reverb - start"); })
                     .on("finish", () => {
-                        console.log("Disconnecting");
+                        console.log("Reverb - finish");
                         connection.disconnect();
                     });
             } else {
@@ -294,7 +294,7 @@ function schedulePost(postDate: Moment): void {
         "hour": imageWindowStartTime.get("hour"),
         "minute": imageWindowStartTime.get("minute"),
         "second": 0,
-        "millisecond": 0
+        "millisecond": 0,
     });
     var randomOffsetMinutes: number = Math.floor(Math.random() * config.imageWindowDurationMinutes);
     var postImageTime: Moment = imageWindowStartDateTime.add(randomOffsetMinutes, "minutes");
@@ -303,6 +303,7 @@ function schedulePost(postDate: Moment): void {
         console.log("Scheduled image post for " + postImageTime.toISOString());
         schedule.scheduleJob(postImageTime.toDate(), postImage);
     } else {
+        console.log("Couldn't schedule image post for " + postImageTime.toISOString() + " because it's in the past. Trying tomorrow...");
         schedulePost(postDate.add(1, "day"));
     }
 }
