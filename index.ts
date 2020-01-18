@@ -137,15 +137,11 @@ const commands: {[key: string]: Command} = {
         }
     },
 
-    voiceTest: {
-        helpText: "voiceTest",
-        execute: async function(message: MessageWithGuild): Promise<void> {
-            if (message.member?.voice.channel) {
-                var connection: VoiceConnection = await message.member.voice.channel?.join();
-                connection.play(fs.createReadStream("voice.opus"), { type: "opus" }).on("finish", () => {
-                    connection.disconnect();
-                });
-            }
+    leaveVoice: {
+        helpText: "Leave the voice channel",
+        execute: function(message: MessageWithGuild): void {
+            // tslint:disable-next-line:no-unused-expression
+            message.guild.voice?.connection?.disconnect();
         }
     },
 
@@ -156,6 +152,10 @@ const commands: {[key: string]: Command} = {
                 var connection: VoiceConnection = await message.member.voice.channel?.join();
                 var audio: stream.Readable = connection.receiver.createStream(message.member, { mode: "pcm", end: "silence" });
                 var passThrough: stream.PassThrough = new stream.PassThrough();
+                var timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
+                    message.channel.send("No audio received in 10 seconds - disconnecting.");
+                    connection.disconnect();
+                });
                 ffmpeg()
                     .input(audio)
                     .inputFormat("s16le")
@@ -164,7 +164,10 @@ const commands: {[key: string]: Command} = {
                     .format("s16le")
                     .pipe(passThrough);
                 connection.play(passThrough, { type: "converted" })
-                    .on("start", () => { console.log("Reverb - start"); })
+                    .on("start", () => {
+                        console.log("Reverb - start");
+                        timeout.cancel();
+                    })
                     .on("finish", () => {
                         console.log("Reverb - finish");
                         connection.disconnect();
