@@ -8,26 +8,36 @@ import stream from "stream";
 import fs from "fs";
 import ffmpeg, { FfmpegCommand } from "fluent-ffmpeg";
 
-type ScoreboardSchema = {
-    [key: string]: { // userId
-        score: number
-    }
+type UserSchema = {
+    battery: number,
+    charging: boolean,
+    chargingSpeed: number,
 };
 
-const DefaultScoreboard: (() => ScoreboardSchema) = () => ({});
+const DefaultUser: (() => UserSchema) = () => ({
+    battery: 1.0,
+    charging: false,
+    chargingSpeed: 3,
+});
+
+type UsersSchema = {
+    [key: string]: UserSchema // userId
+};
+
+const DefaultUsers: (() => UsersSchema) = () => ({});
 
 type GuildSchema = {
     chargingChannel: Snowflake | null, // channelId
     chargingImageStart: Date | null,
     chargedUsers: Snowflake[] | null, // userId[]
-    scoreboard: ScoreboardSchema
+    users: UsersSchema
 };
 
 const DefaultGuild: (() => GuildSchema) = () => ({
     chargingChannel: null,
     chargingImageStart: null,
     chargedUsers: null,
-    scoreboard: DefaultScoreboard()
+    users: DefaultUsers(),
 });
 
 type AppSchema = {
@@ -67,88 +77,120 @@ client.login(config.token);
 
 type Command = {
     helpText: string,
-    execute: (message: MessageWithGuild) => void
+    batteryCost: number,
+    execute: (message: MessageWithGuild) => Promise<number>
 };
 
 const commands: {[key: string]: Command} = {
     help: {
         helpText: "View this information",
-        execute: function(message: MessageWithGuild): void {
+        batteryCost: 0,
+        execute: async function(message: MessageWithGuild): Promise<number> {
             var allHelpText: string[] = [];
             Object.entries(commands).forEach(([commandName, command]: [string, Command]) => {
                 allHelpText.push(`${config.prefix}${commandName} - ${command.helpText}`);
             });
             message.channel.send(allHelpText.join("\n"));
+            return 1;
         }
     },
 
     scoreboard: {
         helpText: "View the charging speed scoreboard for this server",
-        execute: function(message: MessageWithGuild): void {
-            var scoreboard: ScoreboardSchema = db.get("guilds")
+        batteryCost: 0.01,
+        execute: async function(message: MessageWithGuild): Promise<number> {
+            var users: UsersSchema = db.get("guilds")
                 .get(message.guild.id)
-                .get("scoreboard", {})
+                .get("users", {})
                 .value();
             type UserScore = {userId: Snowflake, score: number};
-            var scoreArray: UserScore[] = Object.keys(scoreboard)
+            var scoreArray: UserScore[] = Object.keys(users)
                 .map((userId: Snowflake) => ({
                     userId: userId,
-                    score: scoreboard[userId].score
+                    score: users[userId].chargingSpeed
                 }));
             scoreArray.sort(userScore => userScore.score);
             var scoreMessageArray: string[] = [];
             scoreArray.forEach(userScore => {
                 var user: GuildMember | undefined = message.guild.members.get(userScore.userId);
                 var userDisplayName: string = (user === undefined) ? userScore.userId.toString() : user.displayName;
-                scoreMessageArray.push("**" + userDisplayName + "**: " + userScore.score + "W");
+                scoreMessageArray.push("**" + userDisplayName + "**: " + userScore.score + config.scoreSuffix);
             });
             message.channel.send("Scoreboard:\n" + scoreMessageArray.join("\n"));
+            return 1;
         }
     },
 
-    score: {
-        helpText: "View your charging speed",
-        execute: function(message: MessageWithGuild): void {
-            var score: number = db.get("guilds")
+    myInfo: {
+        helpText: "View your battery level and charging speed",
+        batteryCost: 0.01,
+        execute: async function(message: MessageWithGuild): Promise<number> {
+            var user: UserSchema = db.get("guilds")
                 .get(message.guild.id)
-                .get("scoreboard")
+                .get("users")
                 .get(message.author.id)
-                .get("score", config.scoreInitial)
                 .value();
-            message.channel.send(`<@${message.author.id}> Your score is **${score}${config.scoreSuffix}**.`);
+            var displayBattery: string = Math.floor(user.battery * 100) + "%";
+            var displayChargingSpeed: string = user.chargingSpeed + config.scoreSuffix;
+            message.channel.send(`<@${message.author.id}> Your battery is at **${displayBattery}** and your charging speed is **${displayChargingSpeed}**.`);
+            return 1;
+        }
+    },
+
+    charge: {
+        helpText: "Charge your battery",
+        batteryCost: 0,
+        execute: async function(message: MessageWithGuild): Promise<number> {
+            // check if this user is already charging in this guild
+            // check if this user is already at full battery
+            // check if 2+ users are already charging in this guild
+            db.get("guilds")
+                .get(message.guild.id)
+                .get("users")
+                .get(message.author.id)
+                .set("battery", 1)
+                .write();
+            return 1;
         }
     },
 
     setChargingChannel: {
         helpText: "Set the channel for charging to the channel where the command was sent",
-        execute: function(message: MessageWithGuild): void {
+        batteryCost: 0,
+        execute: async function(message: MessageWithGuild): Promise<number> {
             db.get("guilds")
                 .get(message.guild.id)
                 .set("chargingChannel", message.channel.id)
                 .write();
             message.channel.send(`Charging channel updated to <#${message.channel.id}>.`);
+            return 1;
         }
     },
 
     forcePostImage: {
         helpText: "Force-post image",
-        execute: function(message: MessageWithGuild): void {
+        batteryCost: 1.0,
+        execute: async function(message: MessageWithGuild): Promise<number> {
             postImage();
+            return 1;
         }
     },
 
     leaveVoice: {
         helpText: "Leave the voice channel",
-        execute: function(message: MessageWithGuild): void {
+        batteryCost: 0.05,
+        execute: async function(message: MessageWithGuild): Promise<number> {
             // tslint:disable-next-line:no-unused-expression
             message.guild.voice?.connection?.disconnect();
+            return 1;
         }
     },
 
     reverb: {
         helpText: "Add reverb to your voice",
-        execute: async function(message: MessageWithGuild): Promise<void> {
-            ffmpegAudioCommand("reverb", message, ((baseCommand: FfmpegCommand) =>
+        batteryCost: 0.15,
+        execute: async function(message: MessageWithGuild): Promise<number> {
+            return ffmpegAudioCommand("reverb", message, ((baseCommand: FfmpegCommand) =>
                 baseCommand.on("start", console.log)
                     .input(config.reverbKernel)
                     .input("anullsrc=channel_layout=stereo:sample_rate=44100")
@@ -187,8 +229,9 @@ const commands: {[key: string]: Command} = {
 
     wibbry: {
         helpText: "Repeat your voice with a wobbly audio filter",
-        execute: async function(message: MessageWithGuild): Promise<void> {
-            ffmpegAudioCommand("wibbry", message, ((baseCommand: FfmpegCommand) =>
+        batteryCost: 0.15,
+        execute: async function(message: MessageWithGuild): Promise<number> {
+            return ffmpegAudioCommand("wibbry", message, ((baseCommand: FfmpegCommand) =>
                 baseCommand.addOutputOption("-lavfi", "vibrato=f=4:d=1")
             ));
         }
@@ -196,8 +239,9 @@ const commands: {[key: string]: Command} = {
 
     lq: {
         helpText: "Repeat your voice with super-low quality",
-        execute: async function(message: MessageWithGuild): Promise<void> {
-            ffmpegAudioCommand("lq", message, ((baseCommand: FfmpegCommand) => {
+        batteryCost: 0.15,
+        execute: async function(message: MessageWithGuild): Promise<number> {
+            return ffmpegAudioCommand("lq", message, ((baseCommand: FfmpegCommand) => {
                 var passThrough: stream.PassThrough = new stream.PassThrough();
                 baseCommand.on("start", console.log);
                 baseCommand.format("mp3").audioCodec("libmp3lame").audioBitrate("8k").pipe(passThrough);
@@ -215,51 +259,82 @@ type FfmpegCommandTransformer = ((inputCommand: FfmpegCommand) => FfmpegCommand)
 async function ffmpegAudioCommand(
         commandName: string,
         message: MessageWithGuild,
-        effect: FfmpegCommandTransformer): Promise<void> {
-    var member: GuildMember | undefined;
+        effect: FfmpegCommandTransformer): Promise<number> {
+    var maybeMember: GuildMember | undefined;
     if (message.mentions.members !== null) {
-        member = message.mentions.members.first();
+        maybeMember = message.mentions.members.first();
     }
-    if (member === undefined && message.member !== null) {
-        member = message.member;
+    if (maybeMember === undefined && message.member !== null) {
+        maybeMember = message.member;
     }
-    if (member?.voice.channel) {
-        var connection: VoiceConnection = await member.voice.channel?.join();
-        var audio: stream.Readable = connection.receiver.createStream(member, { mode: "pcm", end: "silence" });
-        var passThrough: stream.PassThrough = new stream.PassThrough();
-        var timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
-            message.channel.send("No audio received in 10 seconds - disconnecting.");
-            connection.disconnect();
-        });
-        effect(ffmpeg().input(audio).inputFormat("s16le"))
-            .format("s16le")
-            .pipe(passThrough);
-        connection.play(passThrough, { type: "converted" })
-            .on("start", () => {
-                console.log(`${commandName} - start`);
-                timeout.cancel();
-            })
-            .on("finish", () => {
-                console.log(`${commandName} - finish`);
+    if (maybeMember?.voice.channel) {
+        var member: GuildMember = maybeMember;
+        var connection: VoiceConnection = await maybeMember.voice.channel?.join();
+        return new Promise<number>((resolve, reject): void => {
+            var audio: stream.Readable = connection.receiver.createStream(member, { mode: "pcm", end: "silence" });
+            var passThrough: stream.PassThrough = new stream.PassThrough();
+            var timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
+                message.channel.send("No audio received in 10 seconds - disconnecting.");
                 connection.disconnect();
+                resolve(0);
             });
+            effect(ffmpeg().input(audio).inputFormat("s16le"))
+                .format("s16le")
+                .pipe(passThrough);
+            connection.play(passThrough, { type: "converted" })
+                .on("start", () => {
+                    console.log(`${commandName} - start`);
+                    timeout.cancel();
+                    resolve(1);
+                })
+                .on("finish", () => {
+                    console.log(`${commandName} - finish`);
+                    connection.disconnect();
+                });
+        });
     } else {
-        if (member === message.member) {
+        if (maybeMember === message.member) {
             message.channel.send("You need to join a voice channel first!");
+            return 0;
         } else {
             message.channel.send("That user needs to join a voice channel first!");
+            return 0;
         }
     }
 }
 
-client.on("message", message => {
-    if (!(message instanceof Message) || message.guild === null) {
+client.on("message", message_ => {
+    if (!(message_ instanceof Message) || message_.guild === null || message_.author.bot) {
         return;
-    } else if (message.content.startsWith(config.prefix)) {
+    }
+    var message: MessageWithGuild = message_ as MessageWithGuild;
+    if (message.content.startsWith(config.prefix)) {
         var firstSpace: number = message.content.indexOf(" ");
         var afterPrefix: string = message.content.slice(config.prefix.length, firstSpace > 0 ? firstSpace : undefined);
         if (commands.hasOwnProperty(afterPrefix)) {
-            commands[afterPrefix].execute(message as MessageWithGuild);
+            var batteryCost: number = commands[afterPrefix].batteryCost;
+            var userBattery: number = db.get("guilds")
+                .get(message.guild.id)
+                .get("users")
+                .defaults({[message.author.id]: DefaultUser()})
+                .get(message.author.id)
+                .get("battery")
+                .value();
+            if (batteryCost <= userBattery) {
+                commands[afterPrefix].execute(message).then((batteryCostWeight: number) => {
+                    var batteryCostWeighted: number = batteryCostWeight * batteryCost;
+                    if (batteryCostWeighted > 0) {
+                        db.get("guilds")
+                            .get(message.guild.id)
+                            .get("users")
+                            .get(message.author.id)
+                            .update("battery", (battery: number) => Math.max(0, battery - batteryCostWeighted))
+                            .write();
+                    }
+                });
+            } else {
+                message.channel.send(`You don't have enough battery power! Charge your battery using the **${config.prefix}charge** command.`);
+            }
         }
         console.log(message.content);
     } else if (message.content === config.entryMessage) {
@@ -336,12 +411,12 @@ function tallyEntries(): void {
                         chargedUserset.forEach((userId: Snowflake) => {
                             db.get("guilds")
                                 .get(guildId)
-                                .get("scoreboard")
-                                .defaults({[userId]: {score: config.scoreInitial}})
+                                .get("users")
+                                .defaults({[userId]: DefaultUser()})
                                 .get(userId)
-                                .update("score", (score: number) => score + config.scoreEntryIncrement)
-                                .write();
+                                .update("chargingSpeed", (score: number) => score + config.scoreEntryIncrement);
                         });
+                        db.write();
                         if (chargedUserset.size > 1) {
                             channel.send(`**${chargedUserset.size} users** have increased their charging speed!`);
                         } else if (chargedUserset.size === 1) {
