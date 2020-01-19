@@ -9,5 +9,5 @@
     "scoreInitial": 3,
     "scoreEntryIncrement": 1.5,
     "scoreSuffix": "W",
-    "reverbKernel": "resources/short-cathedral.wav"
+    "reverbKernel": "resources/long-cathedral.wav"
 }

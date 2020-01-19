@@ -149,9 +149,38 @@ const commands: {[key: string]: Command} = {
         helpText: "Add reverb to your voice",
         execute: async function(message: MessageWithGuild): Promise<void> {
             ffmpegAudioCommand("reverb", message, ((baseCommand: FfmpegCommand) =>
-                baseCommand
+                baseCommand.on("start", console.log)
                     .input(config.reverbKernel)
-                    .addOutputOption("-lavfi", "afir=gtype=gn")
+                    .input("anullsrc=channel_layout=stereo:sample_rate=44100")
+                    .inputFormat("lavfi")
+                    .inputOption(["-t", "3"])
+                    .complexFilter([{
+                        filter: "concat",
+                        options: {
+                            n: 2,
+                            a: 1,
+                            v: 0
+                        },
+                        inputs: [
+                            "0:a",
+                            "2:a"
+                        ],
+                        outputs: [
+                            "concat_a"
+                        ]
+                    }, {
+                        filter: "afir",
+                        options: {
+                            gtype: "gn"
+                        },
+                        inputs: [
+                            "concat_a",
+                            "1:a"
+                        ],
+                        outputs: [
+                            "afir_a"
+                        ]
+                    }], ["afir_a"])
             ));
         }
     },
@@ -160,10 +189,22 @@ const commands: {[key: string]: Command} = {
         helpText: "Repeat your voice with a wobbly audio filter",
         execute: async function(message: MessageWithGuild): Promise<void> {
             ffmpegAudioCommand("wibbry", message, ((baseCommand: FfmpegCommand) =>
-                baseCommand
-                    .input(config.reverbKernel)
-                    .addOutputOption("-lavfi", "vibrato=f=4:d=1")
+                baseCommand.addOutputOption("-lavfi", "vibrato=f=4:d=1")
             ));
+        }
+    },
+
+    lq: {
+        helpText: "Repeat your voice with super-low quality",
+        execute: async function(message: MessageWithGuild): Promise<void> {
+            ffmpegAudioCommand("lq", message, ((baseCommand: FfmpegCommand) => {
+                var passThrough: stream.PassThrough = new stream.PassThrough();
+                baseCommand.on("start", console.log);
+                baseCommand.format("mp3").audioCodec("libmp3lame").audioBitrate("8k").pipe(passThrough);
+                var rtn: ffmpeg.FfmpegCommand = ffmpeg(passThrough).inputFormat("mp3");
+                rtn.on("start", console.log);
+                return rtn;
+            }));
         }
     }
 
@@ -171,7 +212,10 @@ const commands: {[key: string]: Command} = {
 
 type FfmpegCommandTransformer = ((inputCommand: FfmpegCommand) => FfmpegCommand);
 
-async function ffmpegAudioCommand(commandName: string, message: MessageWithGuild, effect: FfmpegCommandTransformer): Promise<void> {
+async function ffmpegAudioCommand(
+        commandName: string,
+        message: MessageWithGuild,
+        effect: FfmpegCommandTransformer): Promise<void> {
     if (message.member?.voice.channel) {
         var connection: VoiceConnection = await message.member.voice.channel?.join();
         var audio: stream.Readable = connection.receiver.createStream(message.member, { mode: "pcm", end: "silence" });
