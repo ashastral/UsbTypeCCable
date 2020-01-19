@@ -232,7 +232,32 @@ const commands: {[key: string]: Command} = {
         batteryCost: 0.15,
         execute: async function(message: MessageWithGuild): Promise<number> {
             return ffmpegAudioCommand("wibbry", message, ((baseCommand: FfmpegCommand) =>
-                baseCommand.addOutputOption("-lavfi", "vibrato=f=4:d=1")
+                baseCommand.complexFilter([
+                    {
+                        filter: "vibrato",
+                        options: {
+                            f: 4,
+                            d: 1
+                        },
+                        outputs: ["v1"],
+                    }, {
+                        filter: "vibrato",
+                        options: {
+                            f: 4,
+                            d: 1
+                        },
+                        inputs: ["v1"],
+                        outputs: ["v2"],
+                    }, {
+                        filter: "vibrato",
+                        options: {
+                            f: 4,
+                            d: 1
+                        },
+                        inputs: ["v2"],
+                        outputs: ["v3"],
+                    }
+                ], "v3")
             ));
         }
     },
