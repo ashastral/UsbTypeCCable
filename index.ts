@@ -216,9 +216,16 @@ async function ffmpegAudioCommand(
         commandName: string,
         message: MessageWithGuild,
         effect: FfmpegCommandTransformer): Promise<void> {
-    if (message.member?.voice.channel) {
-        var connection: VoiceConnection = await message.member.voice.channel?.join();
-        var audio: stream.Readable = connection.receiver.createStream(message.member, { mode: "pcm", end: "silence" });
+    var member: GuildMember | undefined;
+    if (message.mentions.members !== null) {
+        member = message.mentions.members.first();
+    }
+    if (member === undefined && message.member !== null) {
+        member = message.member;
+    }
+    if (member?.voice.channel) {
+        var connection: VoiceConnection = await member.voice.channel?.join();
+        var audio: stream.Readable = connection.receiver.createStream(member, { mode: "pcm", end: "silence" });
         var passThrough: stream.PassThrough = new stream.PassThrough();
         var timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
             message.channel.send("No audio received in 10 seconds - disconnecting.");
@@ -237,7 +244,11 @@ async function ffmpegAudioCommand(
                 connection.disconnect();
             });
     } else {
-        message.channel.send("You need to join a voice channel first!");
+        if (member === message.member) {
+            message.channel.send("You need to join a voice channel first!");
+        } else {
+            message.channel.send("That user needs to join a voice channel first!");
+        }
     }
 }
 
@@ -245,7 +256,8 @@ client.on("message", message => {
     if (!(message instanceof Message) || message.guild === null) {
         return;
     } else if (message.content.startsWith(config.prefix)) {
-        var afterPrefix: string = message.content.slice(config.prefix.length);
+        var firstSpace: number = message.content.indexOf(" ");
+        var afterPrefix: string = message.content.slice(config.prefix.length, firstSpace > 0 ? firstSpace : undefined);
         if (commands.hasOwnProperty(afterPrefix)) {
             commands[afterPrefix].execute(message as MessageWithGuild);
         }
