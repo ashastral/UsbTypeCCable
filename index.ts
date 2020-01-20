@@ -205,6 +205,7 @@ const commands: {[key: string]: Command} = {
             if (user.chargingTick === null) {
                 message.channel.send("You're not charging right now.");
             } else {
+                user.chargingTick.cancel();
                 db.get(["guilds", message.guild.id, "users", message.author.id])
                     .set("chargingTick", null)
                     .write();
