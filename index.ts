@@ -324,17 +324,13 @@ const commands: {[key: string]: Command} = {
         }
     },
 
-    lq: {
-        helpText: "Repeat your voice with super-low quality",
+    chipmunk: {
+        helpText: "Repeat your voice pitched up an octave",
         batteryCost: 0.15,
         execute: async function(message: MessageWithGuild): Promise<number> {
-            return ffmpegAudioCommand("lq", message, ((baseCommand: FfmpegCommand) => {
-                var passThrough: stream.PassThrough = new stream.PassThrough();
+            return ffmpegAudioCommand("chipmunk", message, ((baseCommand: FfmpegCommand) => {
                 baseCommand.on("start", console.log);
-                baseCommand.format("mp3").audioCodec("libmp3lame").audioBitrate("8k").pipe(passThrough);
-                var rtn: ffmpeg.FfmpegCommand = ffmpeg(passThrough).inputFormat("mp3");
-                rtn.on("start", console.log);
-                return rtn;
+                return baseCommand.audioFilters(["asetrate=96000,aresample=48000,atempo=0.5"]);
             }));
         }
     }
