@@ -1,4 +1,4 @@
-import { Client, Message, Guild, TextChannel, Snowflake, Channel, VoiceConnection, GuildMember, MessageAttachment } from "discord.js";
+import { Client, Message, Guild, TextChannel, Snowflake, Channel, VoiceConnection, GuildMember, MessageAttachment, User } from "discord.js";
 import config from "./config.json";
 import low from "lowdb";
 import FileSync from "lowdb/adapters/FileSync";
@@ -12,12 +12,14 @@ type UserSchema = {
     battery: number,
     charging: boolean,
     chargingSpeed: number,
+    chargingTick: schedule.Job | null,
 };
 
 const DefaultUser: (() => UserSchema) = () => ({
     battery: 1.0,
     charging: false,
     chargingSpeed: 3,
+    chargingTick: null,
 });
 
 type UsersSchema = {
@@ -97,7 +99,7 @@ const commands: {[key: string]: Command} = {
 
     scoreboard: {
         helpText: "View the charging speed scoreboard for this server",
-        batteryCost: 0.01,
+        batteryCost: 0,
         execute: async function(message: MessageWithGuild): Promise<number> {
             var users: UsersSchema = db.get("guilds")
                 .get(message.guild.id)
@@ -123,11 +125,12 @@ const commands: {[key: string]: Command} = {
 
     myInfo: {
         helpText: "View your battery level and charging speed",
-        batteryCost: 0.01,
+        batteryCost: 0,
         execute: async function(message: MessageWithGuild): Promise<number> {
             var user: UserSchema = db.get("guilds")
                 .get(message.guild.id)
                 .get("users")
+                .defaults({[message.author.id]: DefaultUser()})
                 .get(message.author.id)
                 .value();
             var displayBattery: string = Math.floor(user.battery * 100) + "%";
@@ -141,15 +144,29 @@ const commands: {[key: string]: Command} = {
         helpText: "Charge your battery",
         batteryCost: 0,
         execute: async function(message: MessageWithGuild): Promise<number> {
-            // check if this user is already charging in this guild
-            // check if this user is already at full battery
-            // check if 2+ users are already charging in this guild
-            db.get("guilds")
+            var user: UserSchema = db.get("guilds")
                 .get(message.guild.id)
                 .get("users")
                 .get(message.author.id)
-                .set("battery", 1)
-                .write();
+                .value();
+            if (user.chargingTick !== null) {
+                message.channel.send("You're already charging!");
+            } else if (user.battery >= 1) {
+                message.channel.send("Your battery is already full!");
+            } else {
+                var currentlyCharging: number = db.get("guilds")
+                    .get(message.guild.id)
+                    .get("users")
+                    .map((user: UserSchema) => user.chargingTick)
+                    .filter((chargingTick: schedule.Job | null) => chargingTick !== null)
+                    .size()
+                    .value();
+                if (currentlyCharging >= 2) { // todo: per-guild config of charging port count
+                    message.channel.send("Sorry, all the charging ports are currently in use.");
+                } else {
+                    scheduleChargeTick(message.guild.id, message.author.id);
+                }
+            }
             return 1;
         }
     },
@@ -178,7 +195,7 @@ const commands: {[key: string]: Command} = {
 
     leaveVoice: {
         helpText: "Leave the voice channel",
-        batteryCost: 0.05,
+        batteryCost: 0,
         execute: async function(message: MessageWithGuild): Promise<number> {
             // tslint:disable-next-line:no-unused-expression
             message.guild.voice?.connection?.disconnect();
@@ -386,6 +403,28 @@ client.on("message", message_ => {
     }
 });
 
+function scheduleChargeTick(guildId: Snowflake, userId: Snowflake): void {
+    var user: UserSchema = db.get(["guilds", guildId, "users", userId]).value();
+    var chargingTickSeconds: number = 900 / user.chargingSpeed;
+    var nextCharge: Date = moment().add(chargingTickSeconds, "second").toDate();
+    console.log(`Guild ${guildId} / user ${userId}'s next charge tick is at ${nextCharge.toISOString()}`);
+    db.get(["guilds", guildId, "users", userId])
+        .set("chargingTick", schedule.scheduleJob(nextCharge, () => {
+            db.get(["guilds", guildId, "users", userId])
+                .update("battery", (battery: number) => Math.min(1, battery + 0.01))
+                .write();
+            if (db.get(["guilds", guildId, "users", userId, "battery"]).value() === 1) {
+                db.get(["guilds", guildId, "users", userId])
+                    .set("chargingTick", null)
+                    .write();
+                console.log(`Guild ${guildId} / user ${userId} is fully charged`);
+            } else {
+                scheduleChargeTick(guildId, userId);
+            }
+        }))
+        .write();
+}
+
 function registerGuild(guild: Guild): void {
     if (!db.get("guilds").has(guild.id).value()) {
         console.log(`Writing guild ID ${guild.id}`);
@@ -417,8 +456,14 @@ function postImage(): void {
                         console.log("Scheduled entry tallying for " + endTime.toISOString());
                         schedule.scheduleJob(endTime.toDate(), tallyEntries);
                     });
+                } else {
+                    console.log(`Charging channel for guild ${guildId} is not a TextChannel`);
                 }
+            } else {
+                console.log(`Client doesn't know about guild ${guildId}`);
             }
+        } else {
+            console.log(`No charging channel set for guild ${guildId}`);
         }
     });
 }
@@ -432,20 +477,21 @@ function tallyEntries(): void {
                 var channel: Channel | undefined = guild.channels.get(schema.chargingChannel);
                 if (channel instanceof TextChannel) {
                     if (schema.chargedUsers !== null) {
-                        var chargedUserset: Set<Snowflake> = new Set(schema.chargedUsers);
-                        chargedUserset.forEach((userId: Snowflake) => {
+                        var chargedUserSet: Set<Snowflake> = new Set(schema.chargedUsers);
+                        chargedUserSet.forEach((userId: Snowflake) => {
                             db.get("guilds")
                                 .get(guildId)
                                 .get("users")
                                 .defaults({[userId]: DefaultUser()})
                                 .get(userId)
-                                .update("chargingSpeed", (score: number) => score + config.scoreEntryIncrement);
+                                .update("chargingSpeed", (score: number) => score + config.scoreEntryIncrement)
+                                .value(); // execute but do not write using .value()
                         });
-                        db.write();
-                        if (chargedUserset.size > 1) {
-                            channel.send(`**${chargedUserset.size} users** have increased their charging speed!`);
-                        } else if (chargedUserset.size === 1) {
-                            channel.send(`**${chargedUserset.size} user** has increased their charging speed!`);
+                        db.write(); // write all chargingSpeed updates at the end
+                        if (chargedUserSet.size > 1) {
+                            channel.send(`**${chargedUserSet.size} users** have increased their charging speed!`);
+                        } else if (chargedUserSet.size === 1) {
+                            channel.send(`**${chargedUserSet.size} user** has increased their charging speed!`);
                         } else {
                             channel.send("No one wanted fast charging today...");
                         }
@@ -456,9 +502,17 @@ function tallyEntries(): void {
                                 chargedUsers: null
                             })
                             .write();
+                    } else {
+                        console.log(`chargedUsers for guild ${guildId} is null`);
                     }
+                } else {
+                    console.log(`Charging channel for guild ${guildId} is not a TextChannel`);
                 }
+            } else {
+                console.log(`Client doesn't know about guild ${guildId}`);
             }
+        } else {
+            console.log(`No charging channel set for guild ${guildId}`);
         }
     });
     schedulePost(moment().add(1, "day"));
