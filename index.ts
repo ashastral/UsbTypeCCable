@@ -178,9 +178,9 @@ const commands: {[key: string]: Command} = {
                     var minutesToFull: number = secondsToFull / 60;
                     var hoursToFull: number = minutesToFull / 60;
                     var timeToFullDisplay: string;
-                    if (hoursToFull > 0) {
+                    if (hoursToFull >= 1) {
                         timeToFullDisplay = hoursToFull.toFixed(1) + " hours";
-                    } else if (minutesToFull > 0) {
+                    } else if (minutesToFull >= 1) {
                         timeToFullDisplay = minutesToFull.toFixed(0) + " minutes";
                     } else {
                         timeToFullDisplay = secondsToFull.toFixed(0) + " seconds";
