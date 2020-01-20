@@ -10,14 +10,12 @@ import ffmpeg, { FfmpegCommand } from "fluent-ffmpeg";
 
 type UserSchema = {
     battery: number,
-    charging: boolean,
     chargingSpeed: number,
     chargingTick: schedule.Job | null,
 };
 
 const DefaultUser: (() => UserSchema) = () => ({
     battery: 1.0,
-    charging: false,
     chargingSpeed: 3,
     chargingTick: null,
 });
@@ -60,6 +58,17 @@ const db: low.LowdbSync<AppSchema> = low(adapter);
 if (!db.has("guilds").value()) {
     db.defaults(DefaultApp()).write();
 }
+
+db.get("guilds").forEach((_: GuildSchema, guildId: Snowflake) => {
+    console.log("Clearing chargingTick for guild " + guildId);
+    db.get(["guilds", guildId, "users"]).forEach((_: UserSchema, userId: Snowflake) => {
+        console.log("Clearing chargingTick for user " + userId);
+        db.get(["guilds", guildId, "users", userId])
+            .set("chargingTick", null)
+            .value();
+    }).value();
+}).value();
+db.write();
 
 const client: Client = new Client();
 
@@ -123,7 +132,7 @@ const commands: {[key: string]: Command} = {
         }
     },
 
-    myInfo: {
+    status: {
         helpText: "View your battery level and charging speed",
         batteryCost: 0,
         execute: async function(message: MessageWithGuild): Promise<number> {
@@ -135,7 +144,8 @@ const commands: {[key: string]: Command} = {
                 .value();
             var displayBattery: string = Math.floor(user.battery * 100) + "%";
             var displayChargingSpeed: string = user.chargingSpeed + config.scoreSuffix;
-            message.channel.send(`<@${message.author.id}> Your battery is at **${displayBattery}** and your charging speed is **${displayChargingSpeed}**.`);
+            var displayCharging: string = user.chargingTick !== null ? " (charging)" : ""
+            message.channel.send(`<@${message.author.id}> Your battery is at **${displayBattery}**${displayCharging} and your charging speed is **${displayChargingSpeed}**.`);
             return 1;
         }
     },
@@ -164,8 +174,42 @@ const commands: {[key: string]: Command} = {
                 if (currentlyCharging >= 2) { // todo: per-guild config of charging port count
                     message.channel.send("Sorry, all the charging ports are currently in use.");
                 } else {
+                    var secondsToFull: number = (1 - user.battery) * 100 * (900 / user.chargingSpeed);
+                    var minutesToFull: number = secondsToFull / 60;
+                    var hoursToFull: number = minutesToFull / 60;
+                    var timeToFullDisplay: string;
+                    if (hoursToFull > 0) {
+                        timeToFullDisplay = hoursToFull.toFixed(1) + " hours";
+                    } else if (minutesToFull > 0) {
+                        timeToFullDisplay = minutesToFull.toFixed(0) + " minutes";
+                    } else {
+                        timeToFullDisplay = secondsToFull.toFixed(0) + " seconds";
+                    }
+                    message.channel.send(`You're plugged in now. It'll take about **${timeToFullDisplay}** to fully charge.`);
                     scheduleChargeTick(message.guild.id, message.author.id);
                 }
+            }
+            return 1;
+        }
+    },
+
+    unplug: {
+        helpText: "Stop charging your battery",
+        batteryCost: 0,
+        execute: async function(message: MessageWithGuild): Promise<number> {
+            var user: UserSchema = db.get("guilds")
+                .get(message.guild.id)
+                .get("users")
+                .get(message.author.id)
+                .value();
+            if (user.chargingTick === null) {
+                message.channel.send("You're not charging right now.");
+            } else {
+                db.get(["guilds", message.guild.id, "users", message.author.id])
+                    .set("chargingTick", null)
+                    .write();
+                var batteryDisplay: string = Math.floor(user.battery * 100) + "%";
+                message.channel.send(`Unplugged. Your battery is at **${batteryDisplay}**.`);
             }
             return 1;
         }
