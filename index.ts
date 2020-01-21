@@ -407,12 +407,18 @@ client.on("message", message_ => {
                 commands[afterPrefix].execute(message).then((batteryCostWeight: number) => {
                     var batteryCostWeighted: number = batteryCostWeight * batteryCost;
                     if (batteryCostWeighted > 0) {
-                        db.get("guilds")
-                            .get(message.guild.id)
-                            .get("users")
-                            .get(message.author.id)
+                        db.get(["guilds", message.guild.id, "users", message.author.id])
                             .update("battery", (battery: number) => Math.max(0, battery - batteryCostWeighted))
-                            .write();
+                            .value();
+                        var chargingTick: schedule.Job | null = db.get(["guilds", message.guild.id, "users", message.author.id, "chargingTick"]).value();
+                        if (chargingTick !== null) {
+                            chargingTick.cancel();
+                            db.get(["guilds", message.guild.id, "users", message.author.id])
+                                .set("chargingTick", null)
+                                .value();
+                            message.channel.send(`<@${message.author.id}> You've been automatically unplugged to run this command.`);
+                        }
+                        db.write();
                     }
                 });
             } else {
