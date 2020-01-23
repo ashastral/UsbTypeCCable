@@ -3,4 +3,5 @@
 Type C - for fast Charging
 
     npm install
-    npm run ts-node index.ts
+    npm run build
+    npm run start
