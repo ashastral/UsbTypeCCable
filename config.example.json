@@ -1,11 +1,8 @@
 {
     "prefix": "⚡",
     "token": "YOUR.DISCORD.TOKEN.HERE",
-    "image": "resources/typec.jpg",
-    "imageWindowStartTime": "16:00Z",
-    "imageWindowDurationMinutes": 720,
-    "entryDurationSeconds": 300,
-    "entryMessage": "C",
+    "typeCImage": "resources/typec.jpg",
+    "typeCEntryMessage": "C",
     "scoreInitial": 3,
     "scoreEntryIncrement": 1.5,
     "scoreSuffix": "W",
