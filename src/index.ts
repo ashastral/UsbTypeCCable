@@ -499,7 +499,7 @@ function registerGuild(guild: Guild): void {
         if (transientGuild.nextTypeCJob !== null) {
             transientGuild.nextTypeCJob.cancel();
         }
-        schedulePost(guild.id, moment(guildState.nextTypeCDate));
+        schedulePost(guild.id, moment(guildState.nextTypeCDate), { exactDateTime: true });
     } else {
         schedulePost(guild.id, moment());
     }
@@ -575,7 +575,11 @@ function tallyEntries(guildId: Snowflake): void {
     schedulePost(guildId, moment().add(1, "day"));
 }
 
-function schedulePost(guildId: Snowflake, postDate: Moment): void {
+interface SchedulePostOptions {
+    exactDateTime?: boolean;
+}
+
+function schedulePost(guildId: Snowflake, postDate: Moment, options?: SchedulePostOptions): void {
     const guild: GuildState = PS.guild(guildId);
     const transientGuild: TransientGuildState = TS.guild(guildId);
     if (guild.config.typeCWindowStartTime === null
@@ -583,15 +587,20 @@ function schedulePost(guildId: Snowflake, postDate: Moment): void {
             || guild.config.typeCEntryDurationSeconds === null) {
         console.log(`Couldn't schedule Type C for guild ${guildId} because it's not fully configured`);
     } else {
-        const imageWindowStartTime: Moment = moment(guild.config.typeCWindowStartTime, "HH:mmZ");
-        const imageWindowStartDateTime: Moment = postDate.set({
-            hour: imageWindowStartTime.get("hour"),
-            minute: imageWindowStartTime.get("minute"),
-            second: 0,
-            millisecond: 0,
-        });
-        const randomOffsetMinutes: number = Math.floor(Math.random() * guild.config.typeCWindowDurationMinutes);
-        const postImageTime: Moment = imageWindowStartDateTime.add(randomOffsetMinutes, "minutes");
+        let postImageTime: Moment;
+        if (options?.exactDateTime) {
+            postImageTime = postDate;
+        } else {
+            const imageWindowStartTime: Moment = moment(guild.config.typeCWindowStartTime, "HH:mmZ");
+            const imageWindowStartDateTime: Moment = postDate.set({
+                hour: imageWindowStartTime.get("hour"),
+                minute: imageWindowStartTime.get("minute"),
+                second: 0,
+                millisecond: 0,
+            });
+            const randomOffsetMinutes: number = Math.floor(Math.random() * guild.config.typeCWindowDurationMinutes);
+            postImageTime = imageWindowStartDateTime.add(randomOffsetMinutes, "minutes");
+        }
 
         if (postImageTime.isAfter(moment())) {
             guild.nextTypeCDate = postImageTime.toDate();
