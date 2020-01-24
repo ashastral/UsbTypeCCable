@@ -85,7 +85,7 @@ const commands: {[key: string]: Command} = {
                     userId,
                     score: user.chargingSpeed,
                 }));
-            scoreArray.sort((a: UserScore, b: UserScore) => a.score - b.score);
+            scoreArray.sort((a: UserScore, b: UserScore) => b.score - a.score); // highest to lowest
             const scoreMessageArray: string[] = [];
             scoreArray.forEach((userScore) => {
                 const user: GuildMember | undefined = message.guild.members.get(userScore.userId);
