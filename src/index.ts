@@ -59,7 +59,7 @@ const commands: {[key: string]: Command} = {
     commands: {
         helpText: "View this information",
         async run(message: MessageWithGuild): Promise<number> {
-            const allHelpText: string[] = [];
+            const allHelpText: string[] = ["User commands:"];
             Object.entries(commands).forEach(([commandName, command]: [string, Command]) => {
                 if (command.adminOnly) {
                     return;
@@ -68,7 +68,7 @@ const commands: {[key: string]: Command} = {
                 if (command.batteryCost !== undefined) {
                     cost = " (-" + (command.batteryCost * 100).toFixed(0) + "%)";
                 }
-                allHelpText.push(`**${config.prefix}${commandName}**${cost} - ${command.helpText}`);
+                allHelpText.push(`> **${config.prefix}${commandName}**${cost} - ${command.helpText}`);
             });
             message.channel.send(allHelpText.join("\n"));
             return 1;
@@ -86,13 +86,13 @@ const commands: {[key: string]: Command} = {
                     score: user.chargingSpeed,
                 }));
             scoreArray.sort((a: UserScore, b: UserScore) => b.score - a.score); // highest to lowest
-            const scoreMessageArray: string[] = [];
+            const scoreMessageArray: string[] = ["Charging speed scoreboard:"];
             scoreArray.forEach((userScore) => {
                 const user: GuildMember | undefined = message.guild.members.get(userScore.userId);
                 const userDisplayName: string = (user === undefined) ? userScore.userId.toString() : user.displayName;
-                scoreMessageArray.push("**" + userDisplayName + "**: " + userScore.score + config.scoreSuffix);
+                scoreMessageArray.push("> **" + userDisplayName + "** - " + userScore.score + config.scoreSuffix);
             });
-            message.channel.send("Scoreboard:\n" + scoreMessageArray.join("\n"));
+            message.channel.send(scoreMessageArray.join("\n"));
             return 1;
         },
     },
@@ -116,16 +116,16 @@ const commands: {[key: string]: Command} = {
             const user: UserState = PS.user(message.guild.id, message.author.id);
             const transientUser: TransientUserState = TS.user(message.guild.id, message.author.id);
             if (transientUser.chargingJob !== null) {
-                message.channel.send("You're already charging!");
+                message.channel.send(`<@${message.author.id}> You're already charging!`);
             } else if (user.battery >= 1) {
-                message.channel.send("Your battery is already full!");
+                message.channel.send(`<@${message.author.id}> Your battery is already full!`);
             } else {
                 const currentlyCharging: number = Object.values(TS.guild(message.guild.id).users)
                     .map((someUser: TransientUserState) => someUser.chargingJob)
                     .filter((chargingJob: schedule.Job | null) => chargingJob !== null)
                     .length;
                 if (currentlyCharging >= 2) { // todo: per-guild config of charging port count
-                    message.channel.send("Sorry, all the charging ports are currently in use.");
+                    message.channel.send(`<@${message.author.id}> Sorry, all the charging ports are currently in use.`);
                 } else {
                     const secondsToFull: number = (1 - user.battery) * 100 * (900 / user.chargingSpeed);
                     const minutesToFull: number = secondsToFull / 60;
@@ -138,7 +138,7 @@ const commands: {[key: string]: Command} = {
                     } else {
                         timeToFullDisplay = secondsToFull.toFixed(0) + " seconds";
                     }
-                    message.channel.send(`You're plugged in now. It'll take about **${timeToFullDisplay}** to fully charge.`);
+                    message.channel.send(`<@${message.author.id}> You're plugged in now. It'll take about **${timeToFullDisplay}** to fully charge.`);
                     scheduleChargeJob(message.guild.id, message.author.id);
                 }
             }
@@ -152,13 +152,13 @@ const commands: {[key: string]: Command} = {
             const user: UserState = PS.user(message.guild.id, message.author.id);
             const transientUser: TransientUserState = TS.user(message.guild.id, message.author.id);
             if (transientUser.chargingJob === null) {
-                message.channel.send("You're not charging right now.");
+                message.channel.send(`<@${message.author.id}> You're not charging right now.`);
             } else {
                 transientUser.chargingJob.cancel();
                 transientUser.chargingJob = null;
                 PS.save();
                 const batteryDisplay: string = Math.floor(user.battery * 100) + "%";
-                message.channel.send(`Unplugged. Your battery is at **${batteryDisplay}**.`);
+                message.channel.send(`<@${message.author.id}> Unplugged. Your battery is at **${batteryDisplay}**.`);
             }
             return 1;
         },
@@ -189,35 +189,35 @@ const commands: {[key: string]: Command} = {
                     const channel: TextChannel | undefined = message.mentions.channels.first();
                     if (channel !== undefined) {
                         guildConfig.chargingChannel = channel.id;
-                        message.channel.send(`Charging channel updated to <#${channel.id}>.`);
+                        message.channel.send(`<@${message.author.id}> Charging channel updated to <#${channel.id}>.`);
                         PS.save();
                     } else {
-                        message.channel.send("Missing channel parameter.");
+                        message.channel.send(`<@${message.author.id}> Missing channel parameter.`);
                     }
                 } else if (configKey === "typeCWindowStartTime") {
                     guildConfig.typeCWindowStartTime = words[2];
-                    message.channel.send(`'Type C' window start time updated to ${words[2]}.`);
+                    message.channel.send(`<@${message.author.id}> 'Type C' window start time updated to ${words[2]}.`);
                     PS.save();
                 } else if (configKey === "typeCWindowDurationMinutes") {
                     const windowDurationMinutes: number = parseInt(words[2], 10);
                     if (windowDurationMinutes >= 1 && windowDurationMinutes <= 1440) {
                         guildConfig.typeCWindowDurationMinutes = windowDurationMinutes;
-                        message.channel.send(`'Type C' window duration updated to ${windowDurationMinutes} minutes.`);
+                        message.channel.send(`<@${message.author.id}> 'Type C' window duration updated to ${windowDurationMinutes} minutes.`);
                         PS.save();
                     } else {
-                        message.channel.send(`Value parameter should be a number of minutes between 1 and 1440.`);
+                        message.channel.send(`<@${message.author.id}> Value parameter should be a number of minutes between 1 and 1440.`);
                     }
                 } else if (configKey === "typeCEntryDurationSeconds") {
                     const entryDurationSeconds: number = parseInt(words[2], 10);
                     if (entryDurationSeconds >= 1 && entryDurationSeconds <= 3600) {
                         guildConfig.typeCEntryDurationSeconds = entryDurationSeconds;
-                        message.channel.send(`'Type C' entry duration updated to ${entryDurationSeconds} seconds.`);
+                        message.channel.send(`<@${message.author.id}> 'Type C' entry duration updated to ${entryDurationSeconds} seconds.`);
                         PS.save();
                     } else {
-                        message.channel.send(`Value parameter should be a number of seconds between 1 and 3600.`);
+                        message.channel.send(`<@${message.author.id}> Value parameter should be a number of seconds between 1 and 3600.`);
                     }
                 } else {
-                    message.channel.send("Unknown or unimplemented config key.");
+                    message.channel.send(`<@${message.author.id}> Unknown or unimplemented config key.`);
                 }
             } else if (words.length === 2) {
                 const key: string = words[1];
@@ -226,9 +226,9 @@ const commands: {[key: string]: Command} = {
                     if (key === "chargingChannel") {
                         value = "<#" + value + ">";
                     }
-                    message.channel.send(`**${key}** is currently set to **${value}**.`);
+                    message.channel.send(`<@${message.author.id}> **${key}** is currently set to **${value}**.`);
                 } else {
-                    message.channel.send(`Unknown config key. Type **${config.prefix}config** by itself for help.`);
+                    message.channel.send(`<@${message.author.id}> Unknown config key. Type **${config.prefix}config** by itself for help.`);
                 }
             } else {
                 message.channel.send(commands.config.helpDetails);
@@ -249,32 +249,33 @@ const commands: {[key: string]: Command} = {
         ].join("\n"),
         async run(message: MessageWithGuild): Promise<number> {
             const words: string[] = message.content.split(" ");
+            const done: string = `<@${message.author.id}> Done.`;
             if (words.length === 2) {
                 const command: string = words[1];
                 if (command === "forceTypeC") {
                     postImage(message.guild.id);
-                    message.channel.send("Done.");
+                    message.channel.send(done);
                 } else if (command === "rescheduleTypeC") {
                     schedulePost(message.guild.id, moment());
-                    message.channel.send("Done.");
+                    message.channel.send(done);
                 } else if (command === "forceTallyEntries") {
                     const transientGuild: TransientGuildState = TS.guild(message.guild.id);
                     if (transientGuild.typeCTallyJob === null) {
-                        message.channel.send("No entry tallying job scheduled currently.");
+                        message.channel.send(`<@${message.author.id}> No entry tallying job scheduled currently.`);
                     } else {
                         transientGuild.typeCTallyJob.invoke();
-                        message.channel.send("Done.");
+                        message.channel.send(done);
                     }
                 } else if (command === "leaveVoice") {
                     message.guild.voice?.connection?.disconnect();
-                    message.channel.send("Done.");
+                    message.channel.send(done);
                 } else {
-                    message.channel.send(`Unknown admin command. Type **${config.prefix}admin** by itself for help.`);
+                    message.channel.send(`<@${message.author.id}> Unknown admin command. Type **${config.prefix}admin** by itself for help.`);
                 }
             } else if (words.length === 1) {
                 message.channel.send(commands.admin.helpDetails);
             } else {
-                message.channel.send("Wrong parameter count.");
+                message.channel.send(`<@${message.author.id}> Wrong parameter count.`);
             }
             return 1;
         },
@@ -389,7 +390,7 @@ async function ffmpegAudioCommand(
             const audio: stream.Readable = connection.receiver.createStream(member, { mode: "pcm", end: "silence" });
             const passThrough: stream.PassThrough = new stream.PassThrough();
             const timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
-                message.channel.send("No audio received in 10 seconds - disconnecting.");
+                message.channel.send(`<@${message.author.id}> No audio received in 10 seconds - disconnecting.`);
                 connection.disconnect();
                 resolve(0.2); // minor penalty to discourage spamming
             });
@@ -409,10 +410,10 @@ async function ffmpegAudioCommand(
         });
     } else {
         if (maybeMember === message.member) {
-            message.channel.send("You need to join a voice channel first!");
+            message.channel.send(`<@${message.author.id}> You need to join a voice channel first!`);
             return 0;
         } else {
-            message.channel.send("That user needs to join a voice channel first!");
+            message.channel.send(`<@${message.author.id}> That user needs to join a voice channel first!`);
             return 0;
         }
     }
@@ -431,7 +432,7 @@ client.on("message", (incomingMessage) => {
             const command: Command = commands[afterPrefix];
             const batteryCost: number = command.batteryCost ?? 0;
             if (command.adminOnly && message.author.id !== config.adminUser) {
-                message.channel.send("This command is restricted to the bot's administrator.");
+                message.channel.send(`<@${message.author.id}> This command is restricted to the bot's administrator.`);
                 return;
             }
             const user: UserState = PS.user(message.guild.id, message.author.id);
@@ -451,7 +452,7 @@ client.on("message", (incomingMessage) => {
                     }
                 });
             } else {
-                message.channel.send(`You don't have enough battery power! Charge your battery using the **${config.prefix}charge** command.`);
+                message.channel.send(`<@${message.author.id}> You don't have enough battery power! Charge your battery using the **${config.prefix}charge** command.`);
             }
         }
         console.log(message.content);
