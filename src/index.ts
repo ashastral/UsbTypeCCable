@@ -38,6 +38,25 @@ interface Command {
 
 const commands: {[key: string]: Command} = {
     help: {
+        helpText: "Learn the basics of the bot",
+        async run(message: MessageWithGuild): Promise<number> {
+            const chargingChannel: string | null = PS.guild(message.guild.id).config.chargingChannel;
+            let chargingChannelDisplay: string;
+            if (chargingChannel !== null) {
+                chargingChannelDisplay = "<#" + chargingChannel + ">";
+            } else {
+                chargingChannelDisplay = "(oops, no chargingChannel set for this server)";
+            }
+            message.channel.send([
+                `I'm **${client.user?.username}**! I have some funny commands you can run (use **${config.prefix}commands** to learn more).`,
+                `Some commands cost "battery power" to run. You'll need to recharge your battery using **${config.prefix}charge** if you run out.`,
+                `To increase your charging speed, follow the instructions on the image I post in ${chargingChannelDisplay} at a random time each day.`,
+            ].join("\n"));
+            return 1;
+        },
+    },
+
+    commands: {
         helpText: "View this information",
         async run(message: MessageWithGuild): Promise<number> {
             const allHelpText: string[] = [];
@@ -49,7 +68,7 @@ const commands: {[key: string]: Command} = {
                 if (command.batteryCost !== undefined) {
                     cost = " (-" + (command.batteryCost * 100).toFixed(0) + "%)";
                 }
-                allHelpText.push(`${config.prefix}${commandName}${cost} - ${command.helpText}`);
+                allHelpText.push(`**${config.prefix}${commandName}**${cost} - ${command.helpText}`);
             });
             message.channel.send(allHelpText.join("\n"));
             return 1;
@@ -263,7 +282,7 @@ const commands: {[key: string]: Command} = {
 
     reverb: {
         batteryCost: 0.15,
-        helpText: "Add reverb to your voice",
+        helpText: "Add reverb to your voice (or someone else's)",
         async run(message: MessageWithGuild): Promise<number> {
             return ffmpegAudioCommand("reverb", message, ((baseCommand: FfmpegCommand) =>
                 baseCommand.on("start", console.log)
@@ -304,7 +323,7 @@ const commands: {[key: string]: Command} = {
 
     wibbry: {
         batteryCost: 0.15,
-        helpText: "Repeat your voice with a wobbly audio filter",
+        helpText: "Repeat your voice (or someone else's) with a wobbly audio filter",
         async run(message: MessageWithGuild): Promise<number> {
             return ffmpegAudioCommand("wibbry", message, ((baseCommand: FfmpegCommand) =>
                 baseCommand.complexFilter([
@@ -339,7 +358,7 @@ const commands: {[key: string]: Command} = {
 
     chipmunk: {
         batteryCost: 0.15,
-        helpText: "Repeat your voice pitched up an octave",
+        helpText: "Repeat your voice (or someone else's) pitched up an octave",
         async run(message: MessageWithGuild): Promise<number> {
             return ffmpegAudioCommand("chipmunk", message, ((baseCommand: FfmpegCommand) => {
                 baseCommand.on("start", console.log);
