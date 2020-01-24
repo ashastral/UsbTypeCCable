@@ -29,20 +29,27 @@ client.on("guildCreate", registerGuild);
 client.login(config.token);
 
 interface Command {
-    batteryCost: number;
+    batteryCost?: number;
     helpText: string;
     helpDetails?: string;
+    adminOnly?: boolean;
     run: (message: MessageWithGuild) => Promise<number>;
 }
 
 const commands: {[key: string]: Command} = {
     help: {
-        batteryCost: 0,
         helpText: "View this information",
         async run(message: MessageWithGuild): Promise<number> {
             const allHelpText: string[] = [];
             Object.entries(commands).forEach(([commandName, command]: [string, Command]) => {
-                allHelpText.push(`${config.prefix}${commandName} - ${command.helpText}`);
+                if (command.adminOnly) {
+                    return;
+                }
+                let cost: string = "";
+                if (command.batteryCost !== undefined) {
+                    cost = " (-" + (command.batteryCost * 100).toFixed(0) + "%)";
+                }
+                allHelpText.push(`${config.prefix}${commandName}${cost} - ${command.helpText}`);
             });
             message.channel.send(allHelpText.join("\n"));
             return 1;
@@ -50,7 +57,6 @@ const commands: {[key: string]: Command} = {
     },
 
     scoreboard: {
-        batteryCost: 0,
         helpText: "View the charging speed scoreboard for this server",
         async run(message: MessageWithGuild): Promise<number> {
             const users: UsersState<UserState> = PS.guild(message.guild.id).users;
@@ -73,7 +79,6 @@ const commands: {[key: string]: Command} = {
     },
 
     status: {
-        batteryCost: 0,
         helpText: "View your battery level and charging speed",
         async run(message: MessageWithGuild): Promise<number> {
             const user: UserState = PS.user(message.guild.id, message.author.id);
@@ -87,7 +92,6 @@ const commands: {[key: string]: Command} = {
     },
 
     charge: {
-        batteryCost: 0,
         helpText: "Charge your battery",
         async run(message: MessageWithGuild): Promise<number> {
             const user: UserState = PS.user(message.guild.id, message.author.id);
@@ -124,7 +128,6 @@ const commands: {[key: string]: Command} = {
     },
 
     unplug: {
-        batteryCost: 0,
         helpText: "Stop charging your battery",
         async run(message: MessageWithGuild): Promise<number> {
             const user: UserState = PS.user(message.guild.id, message.author.id);
@@ -143,7 +146,7 @@ const commands: {[key: string]: Command} = {
     },
 
     config: {
-        batteryCost: 0,
+        adminOnly: true,
         helpText: "Configure this server's settings",
         helpDetails: [
             `Configure this server's settings. Syntax: **${config.prefix}config key value**. Keys:`,
@@ -215,21 +218,45 @@ const commands: {[key: string]: Command} = {
         },
     },
 
-    forcePostImage: {
-        batteryCost: 1.0,
-        helpText: "Force-post image",
+    admin: {
+        adminOnly: true,
+        helpText: "Administrative commands",
+        helpDetails: [
+            `Administrative commands for this server. Syntax: **${config.prefix}admin command**. Commands:`,
+            "> **forceTypeC** - Post the 'Type C' image immediately.",
+            "> **rescheduleTypeC** - Reschedule the next 'Type C' post.",
+            "> **forceTallyEntries** - Tally entries for the active 'Type C' post immediately.",
+            "> **leaveVoice** - Leave the voice channel.",
+        ].join("\n"),
         async run(message: MessageWithGuild): Promise<number> {
-            postImage(message.guild.id);
-            return 1;
-        },
-    },
-
-    leaveVoice: {
-        batteryCost: 0,
-        helpText: "Leave the voice channel",
-        async run(message: MessageWithGuild): Promise<number> {
-            // tslint:disable-next-line:no-unused-expression
-            message.guild.voice?.connection?.disconnect();
+            const words: string[] = message.content.split(" ");
+            if (words.length === 2) {
+                const command: string = words[1];
+                if (command === "forceTypeC") {
+                    postImage(message.guild.id);
+                    message.channel.send("Done.");
+                } else if (command === "rescheduleTypeC") {
+                    schedulePost(message.guild.id, moment());
+                    message.channel.send("Done.");
+                } else if (command === "forceTallyEntries") {
+                    const transientGuild: TransientGuildState = TS.guild(message.guild.id);
+                    if (transientGuild.typeCTallyJob === null) {
+                        message.channel.send("No entry tallying job scheduled currently.");
+                    } else {
+                        transientGuild.typeCTallyJob.invoke();
+                        message.channel.send("Done.");
+                    }
+                } else if (command === "leaveVoice") {
+                    message.guild.voice?.connection?.disconnect();
+                    message.channel.send("Done.");
+                } else {
+                    message.channel.send(`Unknown admin command. Type **${config.prefix}admin** by itself for help.`);
+                }
+            } else if (words.length === 1) {
+                message.channel.send(commands.admin.helpDetails);
+            } else {
+                message.channel.send("Wrong parameter count.");
+            }
             return 1;
         },
     },
@@ -345,7 +372,7 @@ async function ffmpegAudioCommand(
             const timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
                 message.channel.send("No audio received in 10 seconds - disconnecting.");
                 connection.disconnect();
-                resolve(0);
+                resolve(0.2); // minor penalty to discourage spamming
             });
             effect(ffmpeg().input(audio).inputFormat("s16le"))
                 .format("s16le")
@@ -382,10 +409,16 @@ client.on("message", (incomingMessage) => {
         firstSpace = firstSpace > 0 ? firstSpace : undefined;
         const afterPrefix: string = message.content.slice(config.prefix.length, firstSpace);
         if (commands.hasOwnProperty(afterPrefix)) {
-            const batteryCost: number = commands[afterPrefix].batteryCost;
+            const command: Command = commands[afterPrefix];
+            const batteryCost: number = command.batteryCost ?? 0;
+            if (command.adminOnly && message.author.id !== config.adminUser) {
+                message.channel.send("This command is restricted to the bot's administrator.");
+                return;
+            }
             const user: UserState = PS.user(message.guild.id, message.author.id);
             if (batteryCost <= user.battery) {
-                commands[afterPrefix].run(message).then((batteryCostWeight: number) => {
+                command.run(message).then((batteryCostWeight: number) => {
+                    console.log(`batteryCostWeight = ${batteryCostWeight}`);
                     const batteryCostWeighted: number = batteryCostWeight * batteryCost;
                     if (batteryCostWeighted > 0) {
                         user.battery = Math.max(0, user.battery - batteryCostWeighted);
@@ -467,7 +500,10 @@ function postImage(guildId: Snowflake): void {
                     if (guildState.config.typeCEntryDurationSeconds !== null) { // should always be true
                         const endTime: Moment = moment().add(guildState.config.typeCEntryDurationSeconds, "seconds");
                         console.log("Scheduled entry tallying for " + endTime.toISOString());
-                        schedule.scheduleJob(endTime.toDate(), () => { tallyEntries(guildId); });
+                        transientGuild.typeCTallyJob = schedule.scheduleJob(endTime.toDate(), () => {
+                            tallyEntries(guildId);
+                            transientGuild.typeCTallyJob = null;
+                        });
                     }
                 });
             } else {

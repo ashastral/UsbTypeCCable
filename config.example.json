@@ -1,6 +1,7 @@
 {
     "prefix": "⚡",
     "token": "YOUR.DISCORD.TOKEN.HERE",
+    "adminUser": "YOUR USER ID HERE",
     "typeCImage": "resources/typec.jpg",
     "typeCEntryMessage": "C",
     "scoreInitial": 3,

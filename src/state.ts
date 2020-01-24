@@ -42,6 +42,7 @@ export class TransientGuildState implements IGuildState<TransientUserState> {
     public typeCPostStart: Date | null = null;
     public typeCChargedUsers: Snowflake[] | null = null; // userId[]
     public nextTypeCJob: schedule.Job | null = null;
+    public typeCTallyJob: schedule.Job | null = null;
     public users: UsersState<TransientUserState> = new UsersState<TransientUserState>();
 }
 
@@ -87,7 +88,8 @@ export class PersistentAppState extends AppState<GuildState, UserState> {
     }
 
     public save(): void {
-        fs.writeFileSync(this.filename, JSON.stringify(this, undefined, 4), {encoding: "utf-8"});
+        const exportData: { guilds: GuildsState<GuildState> } = { guilds: this.guilds };
+        fs.writeFileSync(this.filename, JSON.stringify(exportData, undefined, 4), {encoding: "utf-8"});
     }
 
     protected defaultGuild(): GuildState {
