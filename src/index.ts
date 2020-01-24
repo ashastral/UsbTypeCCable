@@ -156,7 +156,6 @@ const commands: {[key: string]: Command} = {
             } else {
                 transientUser.chargingJob.cancel();
                 transientUser.chargingJob = null;
-                PS.save();
                 const batteryDisplay: string = Math.floor(user.battery * 100) + "%";
                 message.channel.send(`<@${message.author.id}> Unplugged. Your battery is at **${batteryDisplay}**.`);
             }
@@ -491,7 +490,6 @@ function scheduleChargeJob(guildId: Snowflake, userId: Snowflake): void {
         }
         PS.save();
     });
-    PS.save();
 }
 
 function registerGuild(guild: Guild): void {
@@ -501,6 +499,8 @@ function registerGuild(guild: Guild): void {
         if (transientGuild.nextTypeCJob !== null) {
             transientGuild.nextTypeCJob.cancel();
         }
+        schedulePost(guild.id, moment(guildState.nextTypeCDate));
+    } else {
         schedulePost(guild.id, moment());
     }
 }
@@ -550,6 +550,7 @@ function tallyEntries(guildId: Snowflake): void {
                     chargedUserSet.forEach((userId: Snowflake) => {
                         PS.user(guildId, userId).chargingSpeed += config.scoreEntryIncrement;
                     });
+                    PS.save();
                     if (chargedUserSet.size > 1) {
                         channel.send(`**${chargedUserSet.size} users** have increased their charging speed!`);
                     } else if (chargedUserSet.size === 1) {
@@ -559,7 +560,6 @@ function tallyEntries(guildId: Snowflake): void {
                     }
                     transientGuild.typeCPostStart = null;
                     transientGuild.typeCChargedUsers = null;
-                    PS.save();
                 } else {
                     console.log(`typeCChargedUsers for guild ${guildId} is null`);
                 }
@@ -597,6 +597,7 @@ function schedulePost(guildId: Snowflake, postDate: Moment): void {
             guild.nextTypeCDate = postImageTime.toDate();
             transientGuild.nextTypeCJob = schedule.scheduleJob(postImageTime.toDate(), () => { postImage(guildId); });
             console.log("Scheduled image post for " + postImageTime.toISOString());
+            PS.save();
         } else {
             console.log(`Couldn't schedule image post for ${postImageTime.toISOString()} because it's in the past. Trying tomorrow...`);
             schedulePost(guildId, postDate.add(1, "day"));
