@@ -367,9 +367,54 @@ const commands: {[key: string]: Command} = {
         },
     },
 
+    ow: {
+        batteryCost: 0.3,
+        helpText: "Play the 'ow' FX CHIP sound",
+        async run(message: MessageWithGuild): Promise<number> {
+            return soundClipCommand("ow", message, "resources/ow.wav");
+        },
+    },
+
+    hey: {
+        batteryCost: 0.1,
+        helpText: "Play the 'hey' FX CHIP sound",
+        async run(message: MessageWithGuild): Promise<number> {
+            return soundClipCommand("ow", message, "resources/hey.wav");
+        },
+    },
+
+    yeah: {
+        batteryCost: 0.1,
+        helpText: "Play the 'yeah' FX CHIP sound",
+        async run(message: MessageWithGuild): Promise<number> {
+            return soundClipCommand("ow", message, "resources/yeah.wav");
+        },
+    },
+
 };
 
 type FfmpegCommandTransformer = ((inputCommand: FfmpegCommand) => FfmpegCommand);
+
+async function soundClipCommand(
+        commandName: string,
+        message: MessageWithGuild,
+        soundClip: string): Promise<number> {
+    if (message.member?.voice.channel) {
+        const connection: VoiceConnection = await message.member.voice.channel?.join();
+        connection.play(soundClip)
+            .on("start", () => {
+                console.log(`${commandName} - start`);
+            })
+            .on("finish", () => {
+                console.log(`${commandName} - finish`);
+                connection.disconnect();
+            });
+        return 1;
+    } else {
+        message.channel.send(`<@${message.author.id}> You need to join a voice channel first!`);
+        return 0;
+    }
+}
 
 async function ffmpegAudioCommand(
         commandName: string,
