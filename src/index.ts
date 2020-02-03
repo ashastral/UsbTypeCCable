@@ -1,4 +1,5 @@
-import { Channel, Client, Guild, GuildMember, Message, MessageAttachment, Snowflake, TextChannel, VoiceConnection } from "discord.js";
+import { Channel, Client, Guild, GuildMember, Message, MessageAttachment, Snowflake, StreamOptions,
+         TextChannel, VoiceConnection } from "discord.js";
 import ffmpeg, { FfmpegCommand } from "fluent-ffmpeg";
 import moment, { Moment } from "moment";
 import schedule from "node-schedule";
@@ -398,10 +399,11 @@ type FfmpegCommandTransformer = ((inputCommand: FfmpegCommand) => FfmpegCommand)
 async function soundClipCommand(
         commandName: string,
         message: MessageWithGuild,
-        soundClip: string): Promise<number> {
+        soundClip: string,
+        options?: StreamOptions): Promise<number> {
     if (message.member?.voice.channel) {
         const connection: VoiceConnection = await message.member.voice.channel?.join();
-        connection.play(soundClip)
+        connection.play(soundClip, { volume: 0.5, ...options })
             .on("start", () => {
                 console.log(`${commandName} - start`);
             })
