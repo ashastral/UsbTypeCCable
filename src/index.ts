@@ -246,36 +246,66 @@ const commands: {[key: string]: Command} = {
             "> **rescheduleTypeC** - Reschedule the next 'Type C' post.",
             "> **forceTallyEntries** - Tally entries for the active 'Type C' post immediately.",
             "> **leaveVoice** - Leave the voice channel.",
+            "> **setNickname** - Set the bot's nickname",
         ].join("\n"),
         async run(message: MessageWithGuild): Promise<number> {
             const words: string[] = message.content.split(" ");
-            const done: string = `<@${message.author.id}> Done.`;
-            if (words.length === 2) {
+            interface AdminCommand {
+                parameters?: string[];
+                run: () => boolean | void;
+            }
+            const adminCommands: {[key: string]: AdminCommand} = {
+                forceTypeC: {
+                    run: (): void => {
+                        postImage(message.guild.id);
+                    },
+                },
+                rescheduleTypeC: {
+                    run: (): void => {
+                        schedulePost(message.guild.id, moment());
+                    },
+                },
+                forceTallyEntries: {
+                    run: (): boolean => {
+                        const transientGuild: TransientGuildState = TS.guild(message.guild.id);
+                        if (transientGuild.typeCTallyJob === null) {
+                            message.channel.send(`<@${message.author.id}> No entry tallying job scheduled currently.`);
+                            return false;
+                        } else {
+                            transientGuild.typeCTallyJob.invoke();
+                            return true;
+                        }
+                    },
+                },
+                leaveVoice: {
+                    run: (): void => {
+                        message.guild.voice?.connection?.disconnect();
+                    },
+                },
+                setNickname: {
+                    parameters: ["nickname"],
+                    run: (): void => {
+                        message.guild.me?.setNickname(words[2]);
+                    },
+                },
+            };
+            if (words.length >= 2) {
                 const command: string = words[1];
-                if (command === "forceTypeC") {
-                    postImage(message.guild.id);
-                    message.channel.send(done);
-                } else if (command === "rescheduleTypeC") {
-                    schedulePost(message.guild.id, moment());
-                    message.channel.send(done);
-                } else if (command === "forceTallyEntries") {
-                    const transientGuild: TransientGuildState = TS.guild(message.guild.id);
-                    if (transientGuild.typeCTallyJob === null) {
-                        message.channel.send(`<@${message.author.id}> No entry tallying job scheduled currently.`);
+                if (adminCommands.hasOwnProperty(command)) {
+                    const expectedParameterCount: number = adminCommands[command].parameters?.length ?? 0;
+                    if (words.length === expectedParameterCount + 2) {
+                        const result: boolean | void = adminCommands[command].run();
+                        if (result !== false) {
+                            message.channel.send(`<@${message.author.id}> Done.`);
+                        }
                     } else {
-                        transientGuild.typeCTallyJob.invoke();
-                        message.channel.send(done);
+                        message.channel.send(`<@${message.author.id}> Expected ${expectedParameterCount} parameter(s).`);
                     }
-                } else if (command === "leaveVoice") {
-                    message.guild.voice?.connection?.disconnect();
-                    message.channel.send(done);
                 } else {
                     message.channel.send(`<@${message.author.id}> Unknown admin command. Type **${config.prefix}admin** by itself for help.`);
                 }
-            } else if (words.length === 1) {
-                message.channel.send(commands.admin.helpDetails);
             } else {
-                message.channel.send(`<@${message.author.id}> Wrong parameter count.`);
+                message.channel.send(commands.admin.helpDetails);
             }
             return 1;
         },
