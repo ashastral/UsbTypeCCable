@@ -3,9 +3,12 @@
     "token": "YOUR.DISCORD.TOKEN.HERE",
     "adminUser": "YOUR USER ID HERE",
     "typeCImage": "resources/typec.jpg",
+    "typeCImageEvil": "resources/typec_evil.jpg",
+    "typeCImageEvilChance": 0.08,
     "typeCEntryMessage": "C",
     "scoreInitial": 3,
     "scoreEntryIncrement": 1.5,
+    "scoreEntryEvilMultiplier": 0.5,
     "scoreSuffix": "W",
     "reverbKernel": "resources/long-cathedral.wav"
 }

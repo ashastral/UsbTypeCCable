@@ -1,4 +1,4 @@
-import { Snowflake } from "discord.js";
+import { Snowflake, Message } from "discord.js";
 import fs from "fs";
 import schedule from "node-schedule";
 
@@ -40,6 +40,8 @@ export class GuildState implements IGuildState<UserState> {
 
 export class TransientGuildState implements IGuildState<TransientUserState> {
     public typeCPostStart: Date | null = null;
+    public typeCPostEvil: boolean | null = null;
+    public typeCPostMessage: Message | null = null;
     public typeCChargedUsers: Snowflake[] | null = null; // userId[]
     public nextTypeCJob: schedule.Job | null = null;
     public typeCTallyJob: schedule.Job | null = null;

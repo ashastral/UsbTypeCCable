@@ -590,9 +590,17 @@ function postImage(guildId: Snowflake): void {
         if (guild !== undefined) {
             const channel: Channel | undefined = guild.channels.get(guildState.config.chargingChannel);
             if (channel instanceof TextChannel) {
-                const typeCImage: string = guildState.config.typeCImageOverride || config.typeCImage;
-                channel.send(new MessageAttachment(typeCImage)).then(() => {
+                const typeCEvil: boolean = (Math.random() > config.typeCImageEvilChance);
+                let typeCImage: string;
+                if (typeCEvil) {
+                    typeCImage = config.typeCImageEvil;
+                } else {
+                    typeCImage = guildState.config.typeCImageOverride || config.typeCImage;
+                }
+                channel.send(new MessageAttachment(typeCImage)).then((message: Message) => {
                     transientGuild.typeCPostStart = moment().toDate();
+                    transientGuild.typeCPostEvil = typeCEvil;
+                    transientGuild.typeCPostMessage = message;
                     transientGuild.typeCChargedUsers = [];
                     if (guildState.config.typeCEntryDurationSeconds !== null) { // should always be true
                         const endTime: Moment = moment().add(guildState.config.typeCEntryDurationSeconds, "seconds");
@@ -625,17 +633,33 @@ function tallyEntries(guildId: Snowflake): void {
                 if (transientGuild.typeCChargedUsers !== null) {
                     const chargedUserSet: Set<Snowflake> = new Set(transientGuild.typeCChargedUsers);
                     chargedUserSet.forEach((userId: Snowflake) => {
-                        PS.user(guildId, userId).chargingSpeed += config.scoreEntryIncrement;
+                        if (transientGuild.typeCPostEvil) {
+                            PS.user(guildId, userId).chargingSpeed *= config.scoreEntryEvilMultiplier;
+                        } else {
+                            PS.user(guildId, userId).chargingSpeed += config.scoreEntryIncrement;
+                        }
                     });
                     PS.save();
-                    if (chargedUserSet.size > 1) {
-                        channel.send(`**${chargedUserSet.size} users** have increased their charging speed!`);
-                    } else if (chargedUserSet.size === 1) {
-                        channel.send(`**${chargedUserSet.size} user** has increased their charging speed!`);
+                    let messageTail: string;
+                    if (transientGuild.typeCPostEvil) {
+                        messageTail = "decreased their charging speed for some reason";
                     } else {
-                        channel.send("No one wanted fast charging today...");
+                        messageTail = "increased their charging speed";
+                    }
+                    if (chargedUserSet.size > 1) {
+                        channel.send(`**${chargedUserSet.size} users** have ${messageTail}!`);
+                    } else if (chargedUserSet.size === 1) {
+                        channel.send(`**${chargedUserSet.size} user** has ${messageTail}!`);
+                    } else {
+                        if (transientGuild.typeCPostEvil) {
+                            transientGuild.typeCPostMessage?.delete();
+                        } else {
+                            channel.send("No one wanted fast charging today...");
+                        }
                     }
                     transientGuild.typeCPostStart = null;
+                    transientGuild.typeCPostEvil = null;
+                    transientGuild.typeCPostMessage = null;
                     transientGuild.typeCChargedUsers = null;
                 } else {
                     console.log(`typeCChargedUsers for guild ${guildId} is null`);
