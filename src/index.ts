@@ -590,7 +590,7 @@ function postImage(guildId: Snowflake): void {
         if (guild !== undefined) {
             const channel: Channel | undefined = guild.channels.get(guildState.config.chargingChannel);
             if (channel instanceof TextChannel) {
-                const typeCEvil: boolean = (Math.random() > config.typeCImageEvilChance);
+                const typeCEvil: boolean = (Math.random() < config.typeCImageEvilChance);
                 let typeCImage: string;
                 if (typeCEvil) {
                     typeCImage = config.typeCImageEvil;
