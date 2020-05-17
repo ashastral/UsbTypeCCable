@@ -31,6 +31,7 @@ client.login(config.token);
 
 interface Command {
     batteryCost?: number;
+    scoreCost?: number;
     helpText: string;
     helpDetails?: string;
     adminOnly?: boolean;
@@ -67,7 +68,10 @@ const commands: {[key: string]: Command} = {
                 }
                 let cost: string = "";
                 if (command.batteryCost !== undefined) {
-                    cost = " (-" + (command.batteryCost * 100).toFixed(0) + "%)";
+                    cost += " (-" + (command.batteryCost * 100).toFixed(0) + "%)";
+                }
+                if (command.scoreCost !== undefined) {
+                    cost += " **(-" + command.scoreCost + " W)**";
                 }
                 allHelpText.push(`> **${config.prefix}${commandName}**${cost} - ${command.helpText}`);
             });
@@ -353,7 +357,7 @@ const commands: {[key: string]: Command} = {
     },
 
     wibbry: {
-        batteryCost: 0.15,
+        batteryCost: 0.25,
         helpText: "Repeat your voice (or someone else's) with a wobbly audio filter",
         async run(message: MessageWithGuild): Promise<number> {
             return ffmpegAudioCommand("wibbry", message, ((baseCommand: FfmpegCommand) =>
@@ -410,7 +414,7 @@ const commands: {[key: string]: Command} = {
         batteryCost: 0.1,
         helpText: "Play the 'hey' FX CHIP sound",
         async run(message: MessageWithGuild): Promise<number> {
-            return soundClipCommand("ow", message, "resources/hey.wav");
+            return soundClipCommand("hey", message, "resources/hey.wav");
         },
     },
 
@@ -418,7 +422,16 @@ const commands: {[key: string]: Command} = {
         batteryCost: 0.1,
         helpText: "Play the 'yeah' FX CHIP sound",
         async run(message: MessageWithGuild): Promise<number> {
-            return soundClipCommand("ow", message, "resources/yeah.wav");
+            return soundClipCommand("yeah", message, "resources/yeah.wav");
+        },
+    },
+
+    ronaldinho: {
+        batteryCost: 0.64,
+        scoreCost: 6.4,
+        helpText: "Play the MUNDIAL RONALDINHO SOCCER 64 intro music",
+        async run(message: MessageWithGuild): Promise<number> {
+            return soundClipCommand("ronaldinho", message, "resources/MUNDIAL RONALDINHO SOCCER 64.wav");
         },
     },
 
@@ -507,17 +520,20 @@ client.on("message", (incomingMessage) => {
         if (commands.hasOwnProperty(afterPrefix)) {
             const command: Command = commands[afterPrefix];
             const batteryCost: number = command.batteryCost ?? 0;
+            const scoreCost: number = command.scoreCost ?? 0;
             if (command.adminOnly && message.author.id !== config.adminUser) {
                 message.channel.send(`<@${message.author.id}> This command is restricted to the bot's administrator.`);
                 return;
             }
             const user: UserState = PS.user(message.guild.id, message.author.id);
-            if (batteryCost <= user.battery) {
+            if (batteryCost <= user.battery && scoreCost <= user.chargingSpeed) {
                 command.run(message).then((batteryCostWeight: number) => {
                     console.log(`batteryCostWeight = ${batteryCostWeight}`);
                     const batteryCostWeighted: number = batteryCostWeight * batteryCost;
+                    const scoreCostWeighted: number = batteryCostWeight * scoreCost;
                     if (batteryCostWeighted > 0) {
                         user.battery = Math.max(0, user.battery - batteryCostWeighted);
+                        user.chargingSpeed = Math.max(0, user.chargingSpeed - scoreCostWeighted);
                         const transientUser: TransientUserState = TS.user(message.guild.id, message.author.id);
                         if (transientUser.chargingJob !== null) {
                             transientUser.chargingJob.cancel();
@@ -528,7 +544,11 @@ client.on("message", (incomingMessage) => {
                     }
                 });
             } else {
-                message.channel.send(`<@${message.author.id}> You don't have enough battery power! Charge your battery using the **${config.prefix}charge** command.`);
+                if (batteryCost >= user.battery) {
+                    message.channel.send(`<@${message.author.id}> You don't have enough battery power! Charge your battery using the **${config.prefix}charge** command.`);
+                } else {
+                    message.channel.send(`<@${message.author.id}> Your charging speed isn't high enough! Follow the instructions on the image I post to increase your charging speed.`);
+                }
             }
         }
         console.log(message.content);
@@ -705,6 +725,9 @@ function schedulePost(guildId: Snowflake, postDate: Moment, options?: SchedulePo
 
         if (postImageTime.isAfter(moment())) {
             guild.nextTypeCDate = postImageTime.toDate();
+            if (transientGuild.nextTypeCJob !== null) {
+                transientGuild.nextTypeCJob.cancel();
+            }
             transientGuild.nextTypeCJob = schedule.scheduleJob(postImageTime.toDate(), () => { postImage(guildId); });
             console.log("Scheduled image post for " + postImageTime.toISOString());
             PS.save();
