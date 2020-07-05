@@ -426,14 +426,14 @@ const commands: {[key: string]: Command} = {
         },
     },
 
-    ronaldinho: {
+    /*ronaldinho: {
         batteryCost: 0.64,
         scoreCost: 6.4,
         helpText: "Play the MUNDIAL RONALDINHO SOCCER 64 intro music",
         async run(message: MessageWithGuild): Promise<number> {
             return soundClipCommand("ronaldinho", message, "resources/MUNDIAL RONALDINHO SOCCER 64.wav");
         },
-    },
+    },*/
 
 };
 
