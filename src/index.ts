@@ -46,7 +46,6 @@ interface Command {
     scoreCost?: number;
     helpText: string;
     helpDetails?: string;
-    aliases?: string[];
     adminOnly?: boolean;
     run: (message: MessageWithGuild) => Promise<number>;
 }
@@ -95,7 +94,6 @@ const commands: { [key: string]: Command } = {
 
     scoreboard: {
         helpText: "View the charging speed scoreboard for this server",
-        aliases: ["leaderboard"],
         async run(message: MessageWithGuild): Promise<number> {
             const users: UsersState<UserState> = PS.guild(message.guild.id).users;
             interface UserScore { userId: Snowflake; score: number; }
@@ -114,6 +112,13 @@ const commands: { [key: string]: Command } = {
             });
             message.channel.send(scoreMessageArray.join("\n"));
             return 1;
+        },
+    },
+
+    leaderboard: {
+        helpText: 'alias for scoreboard',
+        async run(message: MessageWithGuild): Promise<number> {
+            return commands.scoreboard.run(message);
         },
     },
 
