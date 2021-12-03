@@ -1,26 +1,38 @@
-import { Channel, Client, Guild, GuildMember, Message, MessageAttachment, Snowflake, StreamOptions,
-         TextChannel, VoiceConnection } from "discord.js";
+import {
+    Channel, Client, Guild, GuildMember, Intents, Message, MessageAttachment, Snowflake,
+    TextChannel
+} from "discord.js";
+import { VoiceConnection } from "@discordjs/voice";
 import ffmpeg, { FfmpegCommand } from "fluent-ffmpeg";
 import moment, { Moment } from "moment";
 import schedule from "node-schedule";
 import stream from "stream";
 import config from "../config.json";
-import { GuildConfigState, GuildState, PersistentAppState, TransientAppState, TransientGuildState,
-         TransientUserState, UsersState, UserState } from "./state";
+import {
+    GuildConfigState, GuildState, PersistentAppState, TransientAppState, TransientGuildState,
+    TransientUserState, UsersState, UserState
+} from "./state";
 
 type MessageWithGuild = { guild: Guild } & Message;
 
 const PS: PersistentAppState = new PersistentAppState("db/state.json");
 const TS: TransientAppState = new TransientAppState();
 
-const client: Client = new Client();
+const client: Client = new Client({
+    intents: [
+        Intents.FLAGS.GUILDS,
+        Intents.FLAGS.GUILD_MEMBERS,
+        Intents.FLAGS.GUILD_VOICE_STATES,
+        Intents.FLAGS.GUILD_MESSAGES,
+    ],
+});
 
 client.once("ready", () => {
-    client.guilds.forEach((guild: Guild) => {
+    client.guilds.cache.forEach((guild: Guild) => {
         registerGuild(guild);
     });
     if (client.user !== null) {
-        client.user.setActivity(`${config.prefix}help`, {type: "PLAYING"});
+        client.user.setActivity(`${config.prefix}help`, { type: "PLAYING" });
     }
     console.log("Ready!");
 });
@@ -34,11 +46,12 @@ interface Command {
     scoreCost?: number;
     helpText: string;
     helpDetails?: string;
+    aliases?: string[];
     adminOnly?: boolean;
     run: (message: MessageWithGuild) => Promise<number>;
 }
 
-const commands: {[key: string]: Command} = {
+const commands: { [key: string]: Command } = {
     help: {
         helpText: "Learn the basics of the bot",
         async run(message: MessageWithGuild): Promise<number> {
@@ -82,6 +95,7 @@ const commands: {[key: string]: Command} = {
 
     scoreboard: {
         helpText: "View the charging speed scoreboard for this server",
+        aliases: ["leaderboard"],
         async run(message: MessageWithGuild): Promise<number> {
             const users: UsersState<UserState> = PS.guild(message.guild.id).users;
             interface UserScore { userId: Snowflake; score: number; }
@@ -93,8 +107,8 @@ const commands: {[key: string]: Command} = {
             scoreArray.sort((a: UserScore, b: UserScore) => b.score - a.score); // highest to lowest
             const scoreMessageArray: string[] = ["Charging speed scoreboard:"];
             scoreArray.forEach((userScore) => {
-                const user: GuildMember | undefined = message.guild.members.get(userScore.userId);
-                const userDisplayName: string = (user === undefined) ? userScore.userId.toString() : user.displayName;
+                const user: GuildMember | null = message.guild.members.resolve(userScore.userId);
+                const userDisplayName: string = (user === null) ? userScore.userId.toString() : user.displayName;
                 scoreMessageArray.push("> **" + userDisplayName + "** - " + userScore.score + config.scoreSuffix);
             });
             message.channel.send(scoreMessageArray.join("\n"));
@@ -190,7 +204,7 @@ const commands: {[key: string]: Command} = {
             if (words.length > 2) {
                 const configKey: string = words[1];
                 if (configKey === "chargingChannel") {
-                    const channel: TextChannel | undefined = message.mentions.channels.first();
+                    const channel: Channel | undefined = message.mentions.channels.first();
                     if (channel !== undefined) {
                         guildConfig.chargingChannel = channel.id;
                         message.channel.send(`<@${message.author.id}> Charging channel updated to <#${channel.id}>.`);
@@ -235,7 +249,7 @@ const commands: {[key: string]: Command} = {
                     message.channel.send(`<@${message.author.id}> Unknown config key. Type **${config.prefix}config** by itself for help.`);
                 }
             } else {
-                message.channel.send(commands.config.helpDetails);
+                message.channel.send(commands.config.helpDetails || '');
             }
             return 1;
         },
@@ -258,7 +272,7 @@ const commands: {[key: string]: Command} = {
                 parameters?: string[];
                 run: () => boolean | void;
             }
-            const adminCommands: {[key: string]: AdminCommand} = {
+            const adminCommands: { [key: string]: AdminCommand } = {
                 forceTypeC: {
                     run: (): void => {
                         postImage(message.guild.id);
@@ -283,7 +297,8 @@ const commands: {[key: string]: Command} = {
                 },
                 leaveVoice: {
                     run: (): void => {
-                        message.guild.voice?.connection?.disconnect();
+                        //TODO integrate with @discordjs/voice
+                        //message.guild.voice?.connection?.disconnect();
                     },
                 },
                 setNickname: {
@@ -309,7 +324,7 @@ const commands: {[key: string]: Command} = {
                     message.channel.send(`<@${message.author.id}> Unknown admin command. Type **${config.prefix}admin** by itself for help.`);
                 }
             } else {
-                message.channel.send(commands.admin.helpDetails);
+                message.channel.send(commands.admin.helpDetails || '');
             }
             return 1;
         },
@@ -440,20 +455,20 @@ const commands: {[key: string]: Command} = {
 type FfmpegCommandTransformer = ((inputCommand: FfmpegCommand) => FfmpegCommand);
 
 async function soundClipCommand(
-        commandName: string,
-        message: MessageWithGuild,
-        soundClip: string,
-        options?: StreamOptions): Promise<number> {
+    commandName: string,
+    message: MessageWithGuild,
+    soundClip: string): Promise<number> {
     if (message.member?.voice.channel) {
-        const connection: VoiceConnection = await message.member.voice.channel?.join();
-        connection.play(soundClip, { volume: 0.5, ...options })
-            .on("start", () => {
-                console.log(`${commandName} - start`);
-            })
-            .on("finish", () => {
-                console.log(`${commandName} - finish`);
-                connection.disconnect();
-            });
+        // TODO integrate with @discordjs/voice
+        // const connection: VoiceConnection = await message.member.voice.channel?.join();
+        // connection.play(soundClip, { volume: 0.5 })
+        //     .on("start", () => {
+        //         console.log(`${commandName} - start`);
+        //     })
+        //     .on("finish", () => {
+        //         console.log(`${commandName} - finish`);
+        //         connection.disconnect();
+        //     });
         return 1;
     } else {
         message.channel.send(`<@${message.author.id}> You need to join a voice channel first!`);
@@ -462,9 +477,9 @@ async function soundClipCommand(
 }
 
 async function ffmpegAudioCommand(
-        commandName: string,
-        message: MessageWithGuild,
-        effect: FfmpegCommandTransformer): Promise<number> {
+    commandName: string,
+    message: MessageWithGuild,
+    effect: FfmpegCommandTransformer): Promise<number> {
     let maybeMember: GuildMember | undefined;
     if (message.mentions.members !== null) {
         maybeMember = message.mentions.members.first();
@@ -473,30 +488,32 @@ async function ffmpegAudioCommand(
         maybeMember = message.member;
     }
     if (maybeMember?.voice.channel) {
-        const member: GuildMember = maybeMember;
-        const connection: VoiceConnection = await maybeMember.voice.channel?.join();
-        return new Promise<number>((resolve): void => {
-            const audio: stream.Readable = connection.receiver.createStream(member, { mode: "pcm", end: "silence" });
-            const passThrough: stream.PassThrough = new stream.PassThrough();
-            const timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
-                message.channel.send(`<@${message.author.id}> No audio received in 10 seconds - disconnecting.`);
-                connection.disconnect();
-                resolve(0.2); // minor penalty to discourage spamming
-            });
-            effect(ffmpeg().input(audio).inputFormat("s16le"))
-                .format("s16le")
-                .pipe(passThrough);
-            connection.play(passThrough, { type: "converted" })
-                .on("start", () => {
-                    console.log(`${commandName} - start`);
-                    timeout.cancel();
-                    resolve(1);
-                })
-                .on("finish", () => {
-                    console.log(`${commandName} - finish`);
-                    connection.disconnect();
-                });
-        });
+        return 0;
+        // TODO integrate with @discordjs/voice
+        // const member: GuildMember = maybeMember;
+        // const connection: VoiceConnection = await maybeMember.voice.channel?.join();
+        // return new Promise<number>((resolve): void => {
+        // const audio: stream.Readable = connection.receiver.createStream(member, { mode: "pcm", end: "silence" });
+        // const passThrough: stream.PassThrough = new stream.PassThrough();
+        // const timeout: schedule.Job = schedule.scheduleJob(moment().add(10, "second").toDate(), () => {
+        //     message.channel.send(`<@${message.author.id}> No audio received in 10 seconds - disconnecting.`);
+        //     connection.disconnect();
+        //     resolve(0.2); // minor penalty to discourage spamming
+        // });
+        // effect(ffmpeg().input(audio).inputFormat("s16le"))
+        //     .format("s16le")
+        //     .pipe(passThrough);
+        // connection.play(passThrough, { type: "converted" })
+        //     .on("start", () => {
+        //         console.log(`${commandName} - start`);
+        //         timeout.cancel();
+        //         resolve(1);
+        //     })
+        //     .on("finish", () => {
+        //         console.log(`${commandName} - finish`);
+        //         connection.disconnect();
+        //     });
+        // });
     } else {
         if (maybeMember === message.member) {
             message.channel.send(`<@${message.author.id}> You need to join a voice channel first!`);
@@ -508,7 +525,7 @@ async function ffmpegAudioCommand(
     }
 }
 
-client.on("message", (incomingMessage) => {
+client.on("messageCreate", (incomingMessage) => {
     if (!(incomingMessage instanceof Message) || incomingMessage.guild === null || incomingMessage.author.bot) {
         return;
     }
@@ -606,9 +623,9 @@ function postImage(guildId: Snowflake): void {
     const guildState: GuildState = PS.guild(guildId);
     const transientGuild: TransientGuildState = TS.guild(guildId);
     if (guildState.config.chargingChannel !== null) {
-        const guild: Guild | undefined = client.guilds.get(guildId);
-        if (guild !== undefined) {
-            const channel: Channel | undefined = guild.channels.get(guildState.config.chargingChannel);
+        const guild: Guild | null = client.guilds.resolve(guildId);
+        if (guild !== null) {
+            const channel: Channel | null = guild.channels.resolve(guildState.config.chargingChannel);
             if (channel instanceof TextChannel) {
                 const typeCEvil: boolean = (Math.random() < config.typeCImageEvilChance);
                 let typeCImage: string;
@@ -617,7 +634,12 @@ function postImage(guildId: Snowflake): void {
                 } else {
                     typeCImage = guildState.config.typeCImageOverride || config.typeCImage;
                 }
-                channel.send(new MessageAttachment(typeCImage)).then((message: Message) => {
+                channel.send({
+                    files: [{
+                        attachment: typeCImage,
+                        name: 'typeC.jpg',
+                    }],
+                }).then((message: Message) => {
                     transientGuild.typeCPostStart = moment().toDate();
                     transientGuild.typeCPostEvil = typeCEvil;
                     transientGuild.typeCPostMessage = message;
@@ -646,9 +668,9 @@ function tallyEntries(guildId: Snowflake): void {
     const guildState: GuildState = PS.guild(guildId);
     const transientGuild: TransientGuildState = TS.guild(guildId);
     if (guildState.config.chargingChannel !== null) {
-        const guild: Guild | undefined = client.guilds.get(guildId);
-        if (guild !== undefined) {
-            const channel: Channel | undefined = guild.channels.get(guildState.config.chargingChannel);
+        const guild: Guild | null = client.guilds.resolve(guildId);
+        if (guild !== null) {
+            const channel: Channel | null = guild.channels.resolve(guildState.config.chargingChannel);
             if (channel instanceof TextChannel) {
                 if (transientGuild.typeCChargedUsers !== null) {
                     const chargedUserSet: Set<Snowflake> = new Set(transientGuild.typeCChargedUsers);
@@ -704,8 +726,8 @@ function schedulePost(guildId: Snowflake, postDate: Moment, options?: SchedulePo
     const guild: GuildState = PS.guild(guildId);
     const transientGuild: TransientGuildState = TS.guild(guildId);
     if (guild.config.typeCWindowStartTime === null
-            || guild.config.typeCWindowDurationMinutes === null
-            || guild.config.typeCEntryDurationSeconds === null) {
+        || guild.config.typeCWindowDurationMinutes === null
+        || guild.config.typeCEntryDurationSeconds === null) {
         console.log(`Couldn't schedule Type C for guild ${guildId} because it's not fully configured`);
     } else {
         let postImageTime: Moment;
