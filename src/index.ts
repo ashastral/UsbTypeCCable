@@ -106,9 +106,10 @@ const commands: { [key: string]: Command } = {
                 }));
             scoreArray.sort((a: UserScore, b: UserScore) => b.score - a.score); // highest to lowest
             const scoreMessageArray: string[] = ["Charging speed scoreboard:"];
-            scoreArray.forEach((userScore) => {
-                const user: GuildMember | null = message.guild.members.resolve(userScore.userId);
-                const userDisplayName: string = (user === null) ? userScore.userId.toString() : user.displayName;
+            const members = await message.guild.members.fetch();
+            scoreArray.forEach(async (userScore) => {
+                const user: GuildMember | undefined = members.get(userScore.userId);
+                const userDisplayName: string = (user === undefined) ? userScore.userId.toString() : user.displayName;
                 scoreMessageArray.push("> **" + userDisplayName + "** - " + userScore.score + config.scoreSuffix);
             });
             message.channel.send(scoreMessageArray.join("\n"));
