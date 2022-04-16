@@ -702,7 +702,7 @@ function tallyEntries(guildId: Snowflake): void {
                         if (transientGuild.typeCPostEvil) {
                             transientGuild.typeCPostMessage?.delete();
                         } else {
-                            channel.send("No one wanted fast charging today...");
+                            channel.send("No one got fast charging today...");
                         }
                     }
                     transientGuild.typeCPostStart = null;
